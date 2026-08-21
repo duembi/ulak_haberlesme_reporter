@@ -230,7 +230,14 @@ export const reportJobApi = {
   listele:         ()                      => http.get<RaporJob[]>("/report-jobs/").then(r => r.data),
   olustur:         (data: RaporJobOlustur) => http.post<RaporJob>("/report-jobs/", data).then(r => r.data),
   durumAl:         (id: number)            => http.get<RaporJob>(`/report-jobs/${id}`).then(r => r.data),
-  indir:           (id: number)            => window.open(`/api/report-jobs/${id}/download`, "_blank"),
+  indir:           async (id: number) => {
+    const url = await _pdfBlob(`/report-jobs/${id}/download`);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rapor_${id}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
   sil:             (id: number)            => http.delete(`/report-jobs/${id}`),
   hatalariTemizle: ()                      => http.delete<{ silinen: number }>("/report-jobs/").then(r => r.data),
 };
