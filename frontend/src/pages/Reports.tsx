@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, FileText, Loader2, CheckCircle2, XCircle,
-  Clock, Download, X, ChevronDown, ChevronUp, Trash2, Eye, UserPlus, Building2, Sparkles, Eraser,
+  Clock, Download, X, ChevronDown, ChevronUp, Trash2, Eye, UserPlus, Building2, Sparkles, Eraser, Send,
 } from "lucide-react";
 import {
   reportJobApi, raporApi, rakipFirmaApi, mailApi,
@@ -472,6 +472,7 @@ function RaporOlusturModal({ onKapat }: { onKapat: () => void }) {
 
 function JobSatiri({ job, onSil }: { job: RaporJob; onSil: () => void }) {
   const [acik, setAcik] = useState(false);
+  const [gonderAcik, setGonderAcik] = useState(false);
   const rakipler: string[] = JSON.parse(job.rakipler_json || "[]");
   const silinebilir = job.durum !== "calisiyor";
 
@@ -497,6 +498,14 @@ function JobSatiri({ job, onSil }: { job: RaporJob; onSil: () => void }) {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
             >
               <Download size={13} /> İndir
+            </button>
+          )}
+          {job.durum === "tamamlandi" && job.rapor_id && (
+            <button
+              onClick={() => setGonderAcik(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <Send size={13} /> Gönder
             </button>
           )}
           {(job.hata_mesaji || rakipler.length > 0) && (
@@ -535,6 +544,96 @@ function JobSatiri({ job, onSil }: { job: RaporJob; onSil: () => void }) {
           )}
         </div>
       )}
+      {gonderAcik && job.rapor_id && (
+        <RaporGonderModal
+          raporId={job.rapor_id}
+          baslik={`Son ${job.gun} Gün — ${formatTarihSaat(job.olusturuldu_at)}`}
+          onKapat={() => setGonderAcik(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Rapor gönderme modali ─────────────────────────────────────────────────────
+
+function RaporGonderModal({ raporId, baslik, onKapat }: { raporId: number; baslik: string; onKapat: () => void }) {
+  const [emailInput, setEmailInput] = useState("");
+  const [mesaj, setMesaj] = useState("");
+  const [hata, setHata] = useState("");
+  const [basarili, setBasarili] = useState(false);
+
+  const gonderMutation = useMutation({
+    mutationFn: (data: { emails: string[]; mesaj: string }) => raporApi.gonder(raporId, data),
+    onSuccess: () => {
+      setBasarili(true);
+      setTimeout(onKapat, 1500);
+    },
+    onError: (e: any) => setHata(e.response?.data?.detail ?? "E-posta gönderilemedi"),
+  });
+
+  const gonderSubmit = () => {
+    setHata("");
+    const emails = emailInput.split(/[,\n]/).map(e => e.trim()).filter(Boolean);
+    if (emails.length === 0) { setHata("En az bir e-posta adresi girin"); return; }
+    gonderMutation.mutate({ emails, mesaj: mesaj.trim() });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Raporu Gönder</h2>
+            <p className="text-slate-500 text-sm mt-0.5 truncate max-w-[280px]">"{baslik}"</p>
+          </div>
+          <button onClick={onKapat} className="p-2 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
+            <X size={18} className="text-slate-500" />
+          </button>
+        </div>
+
+        {basarili ? (
+          <div className="px-6 py-8 flex flex-col items-center text-center gap-2">
+            <CheckCircle2 size={32} className="text-green-600" />
+            <p className="text-sm font-medium text-slate-800">Gönderildi</p>
+          </div>
+        ) : (
+          <div className="px-6 py-5 space-y-4">
+            <div>
+              <label className="label mb-1.5">Alıcı E-posta(lar)</label>
+              <textarea
+                autoFocus
+                value={emailInput}
+                onChange={e => setEmailInput(e.target.value)}
+                placeholder="ornek@sirket.com, diger@sirket.com"
+                rows={2}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-brand-300 resize-none"
+              />
+              <p className="text-xs text-slate-400 mt-1">Birden fazla adresi virgülle ayırın</p>
+            </div>
+            <div>
+              <label className="label mb-1.5">Mesaj (isteğe bağlı)</label>
+              <textarea
+                value={mesaj}
+                onChange={e => setMesaj(e.target.value)}
+                placeholder="Kısa bir not ekleyin..."
+                rows={3}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-brand-300 resize-none"
+              />
+            </div>
+            {hata && <p className="text-xs text-red-600">{hata}</p>}
+            <button
+              onClick={gonderSubmit}
+              disabled={gonderMutation.isPending}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              {gonderMutation.isPending
+                ? <><Loader2 size={14} className="animate-spin" /> Gönderiliyor...</>
+                : <><Send size={14} /> Gönder</>}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -545,6 +644,7 @@ function ArsivSatiri({ rapor, onSil }: { rapor: Rapor; onSil: () => void }) {
   const qc = useQueryClient();
   const [duzenle, setDuzenle] = useState(false);
   const [adInput, setAdInput] = useState(rapor.ad ?? "");
+  const [gonderAcik, setGonderAcik] = useState(false);
 
   const adGuncellemeMutation = useMutation({
     mutationFn: (ad: string) => raporApi.adGuncelle(rapor.id, ad),
@@ -626,6 +726,12 @@ function ArsivSatiri({ rapor, onSil }: { rapor: Rapor; onSil: () => void }) {
             >
               <Download size={13} /> İndir
             </button>
+            <button
+              onClick={() => setGonderAcik(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors"
+            >
+              <Send size={13} /> Gönder
+            </button>
           </>
         ) : (
           <span className="text-xs text-slate-300">PDF yok</span>
@@ -638,6 +744,13 @@ function ArsivSatiri({ rapor, onSil }: { rapor: Rapor; onSil: () => void }) {
           <Trash2 size={15} />
         </button>
       </div>
+      {gonderAcik && (
+        <RaporGonderModal
+          raporId={rapor.id}
+          baslik={rapor.ad || formatTarihSaat(rapor.olusturuldu_at)}
+          onKapat={() => setGonderAcik(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,19 +1,40 @@
+import re
 import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from api.deps import get_current_user
 from api.schemas import RaporYanit
+from config.settings import RESEND_API_KEY
 from src.database import DB_PATH, rapor_sil, rapor_ad_guncelle
+from src.email_sender import rapor_tekil_gonder
 
 router = APIRouter()
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class RaporAdGuncelle(BaseModel):
     ad: str
+
+
+class RaporGonder(BaseModel):
+    emails: list[str]
+    mesaj: str = ""
+
+    @field_validator("emails")
+    @classmethod
+    def emails_gecerli(cls, v: list[str]) -> list[str]:
+        temiz = [e.strip().lower() for e in v if e.strip()]
+        if not temiz:
+            raise ValueError("En az bir e-posta adresi girin")
+        gecersiz = [e for e in temiz if not _EMAIL_RE.match(e)]
+        if gecersiz:
+            raise ValueError(f"Geçersiz e-posta adresi: {', '.join(gecersiz)}")
+        return temiz
 
 
 def _raporlari_cek(tenant_id: int, limit: int, offset: int) -> list[dict]:
@@ -91,6 +112,39 @@ async def rapor_goruntule(rapor_id: int, user: dict = Depends(get_current_user))
         raise HTTPException(404, detail="PDF dosyası mevcut değil")
     return FileResponse(path=str(yol), media_type="application/pdf",
                         content_disposition_type="inline")
+
+
+@router.post("/{rapor_id}/send", status_code=200)
+async def rapor_gonder_endpoint(
+    rapor_id: int,
+    data: RaporGonder,
+    user: dict = Depends(get_current_user),
+):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT ad, olusturuldu_at, dosya_yolu FROM reports WHERE id = ? AND tenant_id = ?",
+            (rapor_id, user["tenant_id"]),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, detail="Rapor bulunamadı")
+
+    if not RESEND_API_KEY:
+        raise HTTPException(
+            400,
+            detail="E-posta gönderimi yapılandırılmamış — .env dosyasında RESEND_API_KEY tanımlanmalı",
+        )
+
+    yol = Path(row["dosya_yolu"]) if row["dosya_yolu"] else None
+    if not yol or not yol.exists():
+        raise HTTPException(404, detail="PDF dosyası mevcut değil")
+
+    rapor_adi = row["ad"] or row["olusturuldu_at"]
+    basarili = rapor_tekil_gonder(yol, data.emails, rapor_adi, data.mesaj)
+    if not basarili:
+        raise HTTPException(500, detail="E-posta gönderilemedi, lütfen tekrar deneyin")
+
+    return {"gonderildi": True, "alicilar": data.emails}
 
 
 @router.get("/{rapor_id}/download")

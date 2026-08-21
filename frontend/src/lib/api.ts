@@ -222,6 +222,8 @@ export const raporApi = {
     http.patch<Rapor>(`/reports/${id}`, { ad }).then(r => r.data),
   sil: (id: number) =>
     http.delete(`/reports/${id}`),
+  gonder: (id: number, data: { emails: string[]; mesaj?: string }) =>
+    http.post<{ gonderildi: boolean; alicilar: string[] }>(`/reports/${id}/send`, data).then(r => r.data),
 };
 
 // ── Report Jobs (asenkron) ────────────────────────────────────────────────────
