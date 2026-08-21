@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ulak-tools": {
+      "command": "python",
+      "args": ["src/mcp_server.py"]
+    }
+  }
+}

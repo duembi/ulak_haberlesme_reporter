@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Değişkenleri (varsayılan: light) ─────────────────────────────────── */
+:root {
+  --brand-50:   #EFF6FF;
+  --brand-100:  #DBEAFE;
+  --brand-200:  #BFDBFE;
+  --brand-500:  #3B82F6;
+  --brand-600:  #2563EB;
+  --brand-700:  #1D4ED8;
+  --brand-800:  #1E3A5F;
+  --sidebar:    #0F172A;
+
+  --bg-base:    #F1F5F9;
+  --bg-card:    #FFFFFF;
+  --bg-input:   #FFFFFF;
+  --bg-hover:   #F8FAFC;
+  --text-main:  #0F172A;
+  --text-sub:   #475569;
+  --text-muted: #94A3B8;
+  --border:     #E2E8F0;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Inter", system-ui, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-main);
+    transition: background 0.2s, color 0.2s;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+}
+
+/* ── Dark mod — Tailwind utility override'ları ───────────────────────────── */
+html.dark ::-webkit-scrollbar-thumb { background: #334155; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Arka planlar */
+html.dark .bg-white       { background-color: var(--bg-card)  !important; }
+html.dark .bg-slate-50    { background-color: var(--bg-hover) !important; }
+html.dark .bg-slate-100   { background-color: var(--bg-hover) !important; }
+html.dark .bg-slate-200   { background-color: var(--border)   !important; }
+
+/* Yazı renkleri */
+html.dark .text-slate-900 { color: var(--text-main)  !important; }
+html.dark .text-slate-800 { color: var(--text-main)  !important; }
+html.dark .text-slate-700 { color: var(--text-sub)   !important; }
+html.dark .text-slate-600 { color: var(--text-sub)   !important; }
+html.dark .text-slate-500 { color: var(--text-muted) !important; }
+html.dark .text-slate-400 { color: var(--text-muted) !important; }
+
+/* Kenar çizgiler */
+html.dark .border-slate-200 { border-color: var(--border) !important; }
+html.dark .border-slate-100 { border-color: var(--border) !important; }
+html.dark .divide-slate-200 > * + * { border-color: var(--border) !important; }
+
+/* Tablolar */
+html.dark thead tr { background-color: var(--bg-hover) !important; }
+
+/* ── Bileşen katmanı ──────────────────────────────────────────────────────── */
+@layer components {
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    @apply rounded-xl shadow-sm;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-sub);
+    border: 1px solid var(--border);
+    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg hover:opacity-80 transition-colors;
+  }
+  .btn-ghost {
+    color: var(--text-sub);
+    @apply inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg hover:opacity-80 transition-colors;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-100 transition-colors;
+  }
+  .input {
+    background: var(--bg-input);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    @apply w-full px-3 py-2 text-sm rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition;
+  }
+  .label {
+    color: var(--text-sub);
+    @apply block text-sm font-medium mb-1;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .table-row-hover {
+    @apply transition-colors;
+  }
+  .table-row-hover:hover {
+    background: var(--bg-hover);
+  }
+}

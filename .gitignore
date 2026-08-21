@@ -1,0 +1,46 @@
+# Ortam & gizli veriler
+.env
+*.db
+.encryption_key
+
+# Pipeline çıktıları
+reports/*
+logs/*
+alerts/*
+
+# .gitkeep dosyalarını tut (dizin iskeletini koru)
+!reports/.gitkeep
+!logs/.gitkeep
+!alerts/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sanal ortam
+.venv/
+venv/
+env/
+
+# Claude Code
+.claude/
+memory/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+
+# Log dosyaları
+*.log
+
+# Kişisel test scriptleri
+scripts/_test_*
+indir.jfif
+*.pdf
