@@ -518,6 +518,23 @@ def report_job_al(job_id: int, tenant_id: int) -> dict | None:
 
 # ── Haber İstatistikleri (Timeline) ──────────────────────────────────────────
 
+def haberler_donem_al(tenant_id: int, gun: int = 1, limit: int = 100) -> list[dict]:
+    """Belirtilen dönemdeki (son {gun} gün) haberleri, en yeniden eskiye, listeler."""
+    esik = (datetime.now() - timedelta(days=gun)).isoformat()
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, baslik, url, kaynak, tarih, sentiment, kategori
+            FROM news
+            WHERE tarih >= ? AND tenant_id = ?
+            ORDER BY tarih DESC
+            LIMIT ?
+            """,
+            (esik, tenant_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def haber_seri_al(tenant_id: int, gun: int = 30) -> list[dict]:
     """Günlük toplam ve olumsuz haber sayılarını döner (line chart için)."""
     esik = (datetime.now() - timedelta(days=gun)).isoformat()

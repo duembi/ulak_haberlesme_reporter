@@ -8,7 +8,7 @@ from api.routers import (
 )
 from api.routers import llm_configs, tenant_competitors, report_jobs
 from api.schemas import IstatistikYanit
-from src.database import init_db, istatistik_al, haber_seri_al
+from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al
 
 app = FastAPI(
     title="Medya İstihbarat API",
@@ -63,6 +63,12 @@ async def istatistikler(user: dict = Depends(get_current_user)):
 async def timeline(gun: int = 30, user: dict = Depends(get_current_user)):
     """Günlük toplam + olumsuz haber sayısı (line chart için)."""
     return haber_seri_al(tenant_id=user["tenant_id"], gun=gun)
+
+
+@app.get("/api/stats/news", tags=["Stats"])
+async def stats_haberler(gun: int = 1, user: dict = Depends(get_current_user)):
+    """Belirtilen dönemdeki (Bugün=1, Bu Hafta=7, Bu Ay=30, Bu Sene=365) haberler."""
+    return haberler_donem_al(tenant_id=user["tenant_id"], gun=gun)
 
 
 @app.get("/api/health", tags=["Health"])

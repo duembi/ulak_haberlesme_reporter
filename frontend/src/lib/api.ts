@@ -113,6 +113,16 @@ export interface TimelineVeri {
   olumsuz: number;
 }
 
+export interface HaberOzet {
+  id: number;
+  baslik: string;
+  url: string;
+  kaynak: string | null;
+  tarih: string | null;
+  sentiment: string | null;
+  kategori: string | null;
+}
+
 export interface Rakip {
   ad: string;
   bolge: string;
@@ -249,6 +259,7 @@ export const reportJobApi = {
 export const statsApi = {
   al:       ()              => http.get<Istatistik>("/stats").then(r => r.data),
   timeline: (gun: number)   => http.get<TimelineVeri[]>("/stats/timeline", { params: { gun } }).then(r => r.data),
+  haberler: (gun: number)   => http.get<HaberOzet[]>("/stats/news", { params: { gun } }).then(r => r.data),
 };
 
 // ── Settings ─────────────────────────────────────────────────────────────────

@@ -1,13 +1,14 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  TrendingUp, TrendingDown, Minus, FileText, Users, Newspaper,
+  TrendingUp, TrendingDown, Minus, FileText, Users, Newspaper, X, ExternalLink,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { statsApi, type Istatistik, type TimelineVeri } from "@/lib/api";
-import { formatTarihSaat } from "@/lib/utils";
+import { statsApi, type Istatistik, type TimelineVeri, type HaberOzet } from "@/lib/api";
+import { formatTarihSaat, formatTarih, cn } from "@/lib/utils";
 
 function StatCard({
   label, value, icon: Icon, color, sub,
@@ -110,6 +111,120 @@ function TimelineChart() {
   );
 }
 
+// ── ULAK kartı + dönem popup'ı ──────────────────────────────────────────────────
+
+const SENTIMENT_BADGE: Record<string, string> = {
+  olumlu: "bg-green-100 text-green-700",
+  olumsuz: "bg-red-100 text-red-700",
+  nötr: "bg-slate-100 text-slate-600",
+};
+
+const DONEMLER = [
+  { key: "bugun", label: "Bugün", gun: 1 },
+  { key: "hafta", label: "Bu Hafta", gun: 7 },
+  { key: "ay", label: "Bu Ay", gun: 30 },
+  { key: "sene", label: "Bu Sene", gun: 365 },
+] as const;
+
+type Donem = (typeof DONEMLER)[number];
+
+function HaberPopup({ donem, onKapat }: { donem: Donem; onKapat: () => void }) {
+  const { data = [], isLoading } = useQuery<HaberOzet[]>({
+    queryKey: ["dashboard-haberler", donem.gun],
+    queryFn: () => statsApi.haberler(donem.gun),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onKapat}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">ULAK — {donem.label}</h2>
+            <p className="text-slate-500 text-sm mt-0.5">
+              {isLoading ? "Yükleniyor…" : `${data.length} haber`}
+            </p>
+          </div>
+          <button onClick={onKapat} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={18} className="text-slate-500" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-4 space-y-2.5">
+          {isLoading ? (
+            [...Array(4)].map((_, i) => (
+              <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />
+            ))
+          ) : data.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-10">Bu dönemde haber bulunamadı.</p>
+          ) : (
+            data.map((h) => (
+              <a
+                key={h.id}
+                href={h.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start justify-between gap-3 p-3.5 rounded-xl border border-slate-100 hover:border-brand-300 hover:bg-brand-50/50 transition-colors group"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 group-hover:text-brand-700 line-clamp-2">
+                    {h.baslik}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400 flex-wrap">
+                    {h.kaynak && <span>{h.kaynak}</span>}
+                    {h.tarih && <span>· {formatTarih(h.tarih)}</span>}
+                    {h.sentiment && (
+                      <span className={cn("px-1.5 py-0.5 rounded-full font-medium", SENTIMENT_BADGE[h.sentiment] ?? "bg-slate-100 text-slate-600")}>
+                        {h.sentiment}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <ExternalLink size={14} className="text-slate-300 group-hover:text-brand-500 shrink-0 mt-1" />
+              </a>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UlakKarti() {
+  const [acikDonem, setAcikDonem] = useState<Donem | null>(null);
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+          <img src="/logo.svg" alt="" className="w-full h-full object-contain p-1" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">ULAK</h2>
+          <p className="text-xs text-slate-400">Dönem seçin, o dönemin haberlerini görün</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {DONEMLER.map((d) => (
+          <button
+            key={d.key}
+            onClick={() => setAcikDonem(d)}
+            className="py-2.5 rounded-lg text-sm font-medium border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+      {acikDonem && <HaberPopup donem={acikDonem} onKapat={() => setAcikDonem(null)} />}
+    </div>
+  );
+}
+
 // ── Ana bileşen ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -149,6 +264,9 @@ export default function Dashboard() {
         <StatCard label="Nötr" value={`%${Math.round((data.notr / total) * 100)}`}
           icon={Minus} color="bg-slate-500" sub={`${data.notr} haber`} />
       </div>
+
+      {/* ULAK kartı — dönem bazlı haber popup'ı */}
+      <UlakKarti />
 
       {/* Timeline grafik — tam genişlik */}
       <TimelineChart />
