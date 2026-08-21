@@ -1,9 +1,9 @@
 """
-Resmi basın bülteni scraper (Türksat kopyasından devralındı).
-Ulak Haberleşme'nin turksat.com.tr/haberler gibi yapılandırılmış bir resmi
-haberler sayfası olduğu doğrulanmadığından bu tenant için devre dışı bırakıldı
-(bkz. press_haberleri_cek). Doğru URL bulununca _HABERLER_URL güncellenip
-devre dışı bırakma satırı kaldırılabilir.
+Resmi basın bülteni scraper.
+ulakhaberlesme.com.tr/category/haberler/ sayfasından haber listesini çeker;
+her makale sayfasından tarih bilgisini doğrular. Site WordPress tabanlı;
+makale linkleri kök dizinde tek segmentli slug olarak yayınlanıyor
+(ör. /ulak-haberlesme-asde-gorev-degisimi/), "haberler/" alt yolunda değil.
 """
 import re
 import time
@@ -14,8 +14,14 @@ from bs4 import BeautifulSoup
 
 from src.news_fetcher import Haber
 
-_BASE_URL     = "https://www.turksat.com.tr"
-_HABERLER_URL = f"{_BASE_URL}/haberler"
+_BASE_URL     = "https://www.ulakhaberlesme.com.tr"
+_HABERLER_URL = f"{_BASE_URL}/category/haberler/"
+# Kök dizindeki statik sayfalar — haber makalesi değil, listeleme sırasında atlanır
+_STATIK_YOLLAR = {
+    "category", "tag", "page", "author", "wp-content", "wp-json", "feed",
+    "en", "iletisim", "hakkimizda", "cozumlerimiz", "projeler", "kariyer",
+    "kalite-yonetimi", "kvkk", "gizlilik-politikasi",
+}
 _HEADERS      = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -33,8 +39,8 @@ _AYLAR = {
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 
-# "15 Nisan 2026" veya "15.04.2026" veya "2026-04-15"
-_RE_TURKCE    = re.compile(r"\b(\d{1,2})\s+([A-Za-zÇçĞğİıÖöŞşÜü]+)\s+(\d{4})\b")
+# "15 Nisan 2026", "5 Mayıs, 2026" (virgüllü) veya "15.04.2026" veya "2026-04-15"
+_RE_TURKCE    = re.compile(r"\b(\d{1,2})\s+([A-Za-zÇçĞğİıÖöŞşÜü]+),?\s+(\d{4})\b")
 _RE_NOKTA     = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 _RE_ISO       = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
@@ -137,64 +143,80 @@ def _makale_tarihi_cek(url: str) -> datetime | None:
     return None
 
 
+def _haber_linki_mi(href: str) -> bool:
+    """Kök dizinde tek segmentli slug ise (ör. /örnek-baslik/) True döner;
+    /category/, /tag/, /en/ gibi statik/gezinme yollarını eler."""
+    yol = href
+    if yol.startswith(_BASE_URL):
+        yol = yol[len(_BASE_URL):]
+    if not yol.startswith("/"):
+        return False
+    segmentler = [s for s in yol.split("/") if s]
+    if len(segmentler) != 1:
+        return False
+    return segmentler[0] not in _STATIK_YOLLAR
+
+
 def press_haberleri_cek(gun: int = 7, max_haber: int = 30) -> list[Haber]:
     """
-    Resmi haberler sayfasından son {gun} günün bültenlerini çeker.
-    Her makale sayfasından tarih doğrulanır; tarihi bu aralıkta olmayan atlanır.
-    """
-    logger.info("Ulak Haberleşme için resmi basın sayfası scraping'i yapılandırılmadı, atlanıyor.")
-    return []
+    Resmi haberler sayfasından (ulakhaberlesme.com.tr/category/haberler/)
+    son {gun} günün bültenlerini çeker.
 
+    Site Avada/Fusion Builder (WordPress) tabanlı; her haber kartı bir
+    `div.fusion-column-wrapper` içinde: tarih `div.fusion-title-heading`,
+    başlık `h5.fusion-title-heading`, bağlantı `a.fusion-button` olarak
+    yer alıyor. Tarih zaten listeleme sayfasında olduğundan makale başına
+    ayrı istek atılmıyor (daha hızlı, siteye daha az yük).
+    """
     esik = datetime.now() - timedelta(days=gun)
     haberler: list[Haber] = []
     goruldu_href: set[str] = set()
 
-    # Haber linklerini listele (yalnızca ilk sayfa yeterli — yeniden eskiye sıralı)
     try:
         resp = requests.get(_HABERLER_URL, headers=_HEADERS, timeout=15)
         resp.raise_for_status()
     except Exception as e:
-        logger.error(f"Türksat haber sayfası çekilemedi: {e}")
+        logger.error(f"Ulak Haberleşme haber sayfası çekilemedi: {e}")
         return []
 
     soup = BeautifulSoup(resp.text, "lxml")
-    aday_linkler: list[tuple[str, str]] = []
 
-    for a in soup.find_all("a", href=True):
-        href  = a["href"]
-        metin = a.get_text(strip=True)
-        if not metin or len(metin) < 10:
+    for kart in soup.select("div.fusion-column-wrapper"):
+        baslik_el = kart.select_one("h5.fusion-title-heading")
+        tarih_el  = kart.select_one("div.fusion-title-heading")
+        link_el   = kart.select_one("a.fusion-button[href]")
+        if not (baslik_el and link_el):
             continue
-        if "haberler/" not in href:
-            continue
+
+        href = link_el["href"]
         if href in goruldu_href:
             continue
         goruldu_href.add(href)
-        tam_url = href if href.startswith("http") else _BASE_URL + href
-        baslik  = metin.replace("İncele", "").replace("Detay", "").strip()
+
+        if not _haber_linki_mi(href):
+            continue
+
+        baslik = baslik_el.get_text(strip=True)
         if len(baslik) < 10:
             continue
-        aday_linkler.append((baslik[:500], tam_url))
 
-    logger.info(f"Türksat haber sayfasında {len(aday_linkler)} bağlantı bulundu")
-
-    for baslik, haber_url in aday_linkler[:max_haber]:
-        tarih = _makale_tarihi_cek(haber_url)
-
+        tarih = _tarih_parse_metin(tarih_el.get_text(strip=True)) if tarih_el else None
+        if tarih is None:
+            # Listeleme sayfasında tarih yoksa makale sayfasından dene
+            tarih = _makale_tarihi_cek(href)
         if tarih is None:
             logger.debug(f"Tarih bulunamadı, atlandı: {baslik[:60]}")
             continue
 
         if tarih < esik:
             logger.debug(f"Eski haber ({tarih.date()}), atlandı: {baslik[:60]}")
-            # Siteye yeniden eskiye sıralandığından, eşiğin altına düşünce dur
             continue
 
         haberler.append(Haber(
-            baslik=baslik,
+            baslik=baslik[:500],
             ozet="",
-            url=haber_url,
-            kaynak="Türksat Resmi",
+            url=href,
+            kaynak="Ulak Haberleşme Resmi",
             tarih=tarih,
             dil="tr",
         ))
@@ -202,5 +224,5 @@ def press_haberleri_cek(gun: int = 7, max_haber: int = 30) -> list[Haber]:
         if len(haberler) >= max_haber:
             break
 
-    logger.info(f"Türksat resmi site: {len(haberler)} güncel haber (son {gun} gün)")
+    logger.info(f"Ulak Haberleşme resmi site: {len(haberler)} güncel haber (son {gun} gün)")
     return haberler

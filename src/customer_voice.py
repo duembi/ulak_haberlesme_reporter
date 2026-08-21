@@ -61,6 +61,16 @@ class MusteriSesiRaporu:
 # ── Platform scraperları ─────────────────────────────────────────────────────
 
 def _sikayetvar_cek(gun: int = 7) -> list[MusteriYorumu]:
+    """
+    Ulak Haberleşme B2B/savunma sanayi tedarikçisi (bireysel tüketiciye değil,
+    operatörlere/kamu kurumlarına satış yapıyor); sikayetvar.com'da şirkete ait
+    bir profil/şikayet sayfası doğrulanamadı (denenen URL 410 Gone döndü).
+    Bu yüzden şimdilik devre dışı — sayfa varlığı doğrulanırsa _SIKAYETVAR_URL
+    güncellenip aşağıdaki erken `return []` kaldırılabilir.
+    """
+    logger.info("Ulak Haberleşme için Şikayetvar sayfası doğrulanamadı, atlanıyor.")
+    return []
+
     yorumlar: list[MusteriYorumu] = []
     url = "https://www.sikayetvar.com/ulak-haberlesme"
     try:
@@ -185,7 +195,8 @@ def _sikayet_com_cek(gun: int = 7) -> list[MusteriYorumu]:
 
 def _eksisozluk_cek(gun: int = 7) -> list[MusteriYorumu]:
     yorumlar: list[MusteriYorumu] = []
-    url = "https://eksisozluk.com/ulak-haberlesme"
+    # Doğru başlık slug'ı: "ulak haberleşme aş" (id 6171707) — düz "ulak-haberlesme" 404 veriyordu
+    url = "https://eksisozluk.com/ulak-haberlesme-as--6171707"
     try:
         resp = requests.get(url, headers={**_HEADERS, "Accept": "text/html"},
                             timeout=15)
