@@ -535,6 +535,19 @@ def haberler_donem_al(tenant_id: int, gun: int = 1, limit: int = 100) -> list[di
     return [dict(r) for r in rows]
 
 
+def haber_sayilari_donem_al(tenant_id: int, gunler: tuple[int, ...] = (1, 7, 30, 365)) -> dict[int, int]:
+    """ULAK kartındaki dönem butonlarının yanında gösterilecek haber sayıları."""
+    with _conn() as conn:
+        sonuc: dict[int, int] = {}
+        for gun in gunler:
+            esik = (datetime.now() - timedelta(days=gun)).isoformat()
+            sonuc[gun] = conn.execute(
+                "SELECT COUNT(*) FROM news WHERE tarih >= ? AND tenant_id = ?",
+                (esik, tenant_id),
+            ).fetchone()[0]
+    return sonuc
+
+
 def haber_seri_al(tenant_id: int, gun: int = 30) -> list[dict]:
     """Günlük toplam ve olumsuz haber sayılarını döner (line chart için)."""
     esik = (datetime.now() - timedelta(days=gun)).isoformat()

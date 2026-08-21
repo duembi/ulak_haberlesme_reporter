@@ -8,7 +8,7 @@ from api.routers import (
 )
 from api.routers import llm_configs, tenant_competitors, report_jobs
 from api.schemas import IstatistikYanit
-from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al
+from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al, haber_sayilari_donem_al
 from src.competitor_tracker import rakip_kart_sayilari, rakip_kart_haberleri, DASHBOARD_FIRMALARI
 
 app = FastAPI(
@@ -70,6 +70,12 @@ async def timeline(gun: int = 30, user: dict = Depends(get_current_user)):
 async def stats_haberler(gun: int = 1, user: dict = Depends(get_current_user)):
     """Belirtilen dönemdeki (Bugün=1, Bu Hafta=7, Bu Ay=30, Bu Sene=365) haberler."""
     return haberler_donem_al(tenant_id=user["tenant_id"], gun=gun)
+
+
+@app.get("/api/stats/news-counts", tags=["Stats"])
+async def stats_haber_sayilari(user: dict = Depends(get_current_user)):
+    """ULAK kartındaki Bugün/Bu Hafta/Bu Ay/Bu Sene butonlarının yanındaki sayılar."""
+    return haber_sayilari_donem_al(tenant_id=user["tenant_id"])
 
 
 @app.get("/api/stats/rakip-kartlar", tags=["Stats"])

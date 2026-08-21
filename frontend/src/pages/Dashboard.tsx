@@ -91,6 +91,12 @@ function HaberPopup({ donem, onKapat }: { donem: Donem; onKapat: () => void }) {
 function UlakKarti() {
   const [acikDonem, setAcikDonem] = useState<Donem | null>(null);
 
+  const { data: sayilar } = useQuery<Record<string, number>>({
+    queryKey: ["ulak-haber-sayilari"],
+    queryFn: statsApi.haberSayilari,
+    staleTime: 60_000,
+  });
+
   return (
     <div className="card p-6">
       <div className="flex items-center gap-3 mb-4">
@@ -107,9 +113,10 @@ function UlakKarti() {
           <button
             key={d.key}
             onClick={() => setAcikDonem(d)}
-            className="py-2.5 rounded-lg text-sm font-medium border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+            className="flex flex-col items-center py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
           >
-            {d.label}
+            <span className="text-sm font-medium">{d.label}</span>
+            <span className="text-xs text-slate-400">{sayilar?.[String(d.gun)] ?? 0} haber</span>
           </button>
         ))}
       </div>
@@ -190,18 +197,33 @@ function RakipHaberPopup({ firma, donem, onKapat }: { firma: string; donem: Raki
   );
 }
 
+const RAKIP_MARKA: Record<string, { renk: string; logo: string }> = {
+  ASELSAN:  { renk: "#013088", logo: "/rakip-logos/aselsan.png" },
+  SSB:      { renk: "#E31513", logo: "/rakip-logos/ssb.png" },
+  SSTEK:    { renk: "#0951F8", logo: "/rakip-logos/sstek.png" },
+  Havelsan: { renk: "#B80A2E", logo: "/rakip-logos/havelsan.png" },
+};
+
 function RakipKarti({ ad, sayilar }: { ad: string; sayilar?: Record<string, number> }) {
   const [acikDonem, setAcikDonem] = useState<RakipDonem | null>(null);
+  const marka = RAKIP_MARKA[ad];
 
   return (
-    <div className="card p-5">
-      <h3 className="text-sm font-semibold text-slate-900 mb-3">{ad}</h3>
+    <div className="card p-5" style={{ borderTop: `3px solid ${marka?.renk ?? "#E2E8F0"}` }}>
+      <div className="flex items-center gap-2.5 mb-3">
+        {marka && (
+          <div className="w-8 h-8 rounded-lg bg-white border border-slate-100 flex items-center justify-center shrink-0 overflow-hidden">
+            <img src={marka.logo} alt="" className="w-full h-full object-contain p-1" />
+          </div>
+        )}
+        <h3 className="text-sm font-semibold" style={{ color: marka?.renk ?? "#0F172A" }}>{ad}</h3>
+      </div>
       <div className="space-y-2">
         {RAKIP_KART_DONEMLER.map((d) => (
           <button
             key={d.key}
             onClick={() => setAcikDonem(d)}
-            className="w-full flex items-center justify-between text-sm px-1.5 py-1 -mx-1.5 rounded-lg hover:bg-brand-50 transition-colors"
+            className="w-full flex items-center justify-between text-sm px-1.5 py-1 -mx-1.5 rounded-lg hover:bg-slate-50 transition-colors"
           >
             <span className="text-slate-500">{d.label}</span>
             <span className="font-semibold text-slate-800">{sayilar?.[d.key] ?? 0}</span>

@@ -269,6 +269,7 @@ export const statsApi = {
   haberler:     (gun: number)                  => http.get<HaberOzet[]>("/stats/news", { params: { gun } }).then(r => r.data),
   rakipKartlar: ()                             => http.get<Record<string, Record<string, number>>>("/stats/rakip-kartlar").then(r => r.data),
   rakipHaberler:(firma: string, gun: number)   => http.get<RakipKartHaberi[]>("/stats/rakip-haberler", { params: { firma, gun } }).then(r => r.data),
+  haberSayilari:()                             => http.get<Record<string, number>>("/stats/news-counts").then(r => r.data),
 };
 
 // ── Settings ─────────────────────────────────────────────────────────────────
