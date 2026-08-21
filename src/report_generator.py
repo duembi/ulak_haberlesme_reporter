@@ -39,6 +39,25 @@ def _guvli_metin(metin: str) -> str:
     return html.escape(temiz)
 
 
+_ATIF_RE = re.compile(r"\[(\d+)\]")
+
+
+def _atiflari_baglantila(guvli_metin: str, haberler: list[Haber]) -> str:
+    """
+    Yönetici özetindeki [n] atıflarını, Referanslar bölümündeki aynı numaralı
+    habere tıklanabilir link olarak dönüştürür. guvli_metin zaten _guvli_metin
+    ile escape edilmiş olmalı — bu fonksiyon sonrasında çağrılır.
+    """
+    def degistir(m: re.Match) -> str:
+        n = int(m.group(1))
+        if 1 <= n <= len(haberler) and haberler[n - 1].url:
+            href = html.escape(haberler[n - 1].url, quote=True)
+            return f'<link href="{href}" color="#0A66C2"><u>[{n}]</u></link>'
+        return m.group(0)
+
+    return _ATIF_RE.sub(degistir, guvli_metin)
+
+
 _LOGO_YOLU = None  # logo kaldırıldı
 
 _FONT_KAYDEDILDI = False
@@ -444,6 +463,9 @@ def _kategori_bolumu(ic, s, haberler):
     ic.append(PageBreak())
     ic.append(Paragraph("Kategori Bazlı Haberler", s["baslik2"]))
 
+    # Referanslar bölümündeki numaralarla eşleşsin diye orijinal sıradaki index
+    ref_no = {id(h): i for i, h in enumerate(haberler, 1)}
+
     kategoriler: dict[str, list[Haber]] = {}
     for h in haberler:
         kategoriler.setdefault(h.kategori, []).append(h)
@@ -459,8 +481,16 @@ def _kategori_bolumu(ic, s, haberler):
         for h in grup:
             renk = SENTIMENT_RENK.get(h.sentiment, RENK_GRI)
             tarih_str = h.tarih.strftime("%d.%m.%Y") if h.tarih else ""
+            baslik_guvenli = _guvli_metin(h.baslik)
+            if h.url:
+                href = html.escape(h.url, quote=True)
+                baslik_link = f'<link href="{href}" color="#1A5276"><b><u>{baslik_guvenli}</u></b></link>'
+            else:
+                baslik_link = f"<b>{baslik_guvenli}</b>"
+            no = ref_no.get(id(h))
+            no_etiket = f'<font color="#5D6D7E" size="8">[{no}]</font>  ' if no else ""
             baslik_html = (
-                f'<b>{h.baslik}</b>  '
+                f'{no_etiket}{baslik_link}  '
                 f'<font color="#{renk.hexval()[2:]}">[{h.sentiment}]</font>  '
                 f'<font color="#5D6D7E" size="8">{tarih_str}</font>'
             )
@@ -904,8 +934,13 @@ def _referanslar(ic, s, haberler):
 
     for i, h in enumerate(haberler, 1):
         tarih_str = h.tarih.strftime("%d.%m.%Y") if h.tarih else "tarih bilinmiyor"
-        ic.append(Paragraph(f"[{i}] {h.baslik}", s["ref_baslik"]))
-        ic.append(Paragraph(f"{h.kaynak}  |  {tarih_str}  |  {h.url}", s["ref_link"]))
+        ic.append(Paragraph(f"[{i}] {_guvli_metin(h.baslik)}", s["ref_baslik"]))
+        if h.url:
+            href = html.escape(h.url, quote=True)
+            link_metin = f'<link href="{href}" color="#0A66C2"><u>{html.escape(h.url)}</u></link>'
+        else:
+            link_metin = "—"
+        ic.append(Paragraph(f"{_guvli_metin(h.kaynak)}  |  {tarih_str}  |  {link_metin}", s["ref_link"]))
 
 
 # ── Ana fonksiyon ────────────────────────────────────────────────────────────
@@ -941,7 +976,14 @@ def rapor_olustur(haberler: list[Haber], yonetici_ozeti: str,
     ic.append(Spacer(1, 0.3*cm))
     for paragraf in yonetici_ozeti.split("\n"):
         if paragraf.strip():
-            ic.append(Paragraph(_guvli_metin(paragraf.strip()), s["govde"]))
+            metin = _atiflari_baglantila(_guvli_metin(paragraf.strip()), haberler)
+            ic.append(Paragraph(metin, s["govde"]))
+    if any(_ATIF_RE.search(p) for p in yonetici_ozeti.split("\n")):
+        ic.append(Paragraph(
+            "Köşeli parantez içindeki numaralar (ör. [3]) tıklanabilir — ilgili haberin "
+            "kaynağına götürür; tam listesi raporun sonundaki Referanslar bölümündedir.",
+            s["kucuk"],
+        ))
     ic.append(Spacer(1, 0.5*cm))
 
     # Grafikler + istatistikler

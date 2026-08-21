@@ -44,6 +44,12 @@ trend bilgisini ve eksik bağlamı tamamlayabilirsin.
 Aşağıdaki haber özetlerini ve sentiment bilgilerini kullanarak Türkçe, akıcı, 3-5 paragraf \
 uzunluğunda yönetici özeti yaz. Önemli gelişmeleri, genel medya tonunu, önceki haftalarla \
 kıyaslamalı trendi ve dikkat çeken konuları vurgula.
+
+ÖNEMLİ — kaynak atfı: Aşağıdaki haber listesindeki her haberin başında bir numara var \
+(ör. "3. [OLUMLU] ..."). Özette belirli bir habere/gelişmeye değindiğinde, cümlenin sonuna \
+o haberin numarasını köşeli parantez içinde ekle (ör: "...yeni anlaşma imzalandı [3]."). \
+Okuyucu bu numaraya tıklayarak kaynağa ulaşabilecek, bu yüzden numaraları doğru ve \
+tutarlı kullan — uydurma numara ekleme, sadece verilen listedeki numaraları kullan.
 SADECE özet metnini yaz, başka hiçbir şey ekleme.
 
 Haber listesi:
@@ -159,9 +165,11 @@ def yonetici_ozeti_uret(haberler: list[Haber]) -> str:
     if not haberler:
         return "Bu hafta Ulak Haberleşme ile ilgili haber bulunamadı."
 
+    # Numaralar rapor PDF'indeki Referanslar bölümüyle eşleşsin diye orijinal
+    # haberler listesindeki sırayla (1'den başlayarak) numaralandırılır.
     haber_listesi = "\n".join([
-        f"- [{h.sentiment.upper()}] {h.baslik} | {h.ai_ozet}"
-        for h in haberler[:40]
+        f"{i}. [{h.sentiment.upper()}] {h.baslik} | {h.ai_ozet}"
+        for i, h in enumerate(haberler[:40], 1)
     ])
     prompt = _YONETICI_OZET_TEMPLATE.format(haber_listesi=haber_listesi)
 
