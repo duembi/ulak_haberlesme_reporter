@@ -107,6 +107,12 @@ async def _rapor_uret(job_id: int, tenant_id: int, gun: int,
     elif kapsam == "secili" and rakipler:
         cmd += ["--rakipler", ",".join(rakipler)]
 
+    import sqlite3
+    with sqlite3.connect(DB_PATH) as conn:
+        onceki_max_id = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM reports WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()[0]
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -116,24 +122,48 @@ async def _rapor_uret(job_id: int, tenant_id: int, gun: int,
         )
         stdout, _ = await proc.communicate()
 
-        if proc.returncode == 0:
-            # Tamamlandı — en son oluşturulan raporu bul
-            import sqlite3
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT id, baslangic_tarih, bitis_tarih, haber_sayisi FROM reports WHERE tenant_id = ? ORDER BY id DESC LIMIT 1",
-                    (tenant_id,),
-                ).fetchone()
-            rapor_id = row["id"] if row else None
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT id, baslangic_tarih, bitis_tarih, haber_sayisi FROM reports WHERE tenant_id = ? ORDER BY id DESC LIMIT 1",
+                (tenant_id,),
+            ).fetchone()
+
+        # Bu çalıştırmada gerçekten YENİ bir rapor satırı oluşmuş mu, diye
+        # kontrol ediyoruz (id, çalıştırma öncesindeki en yüksek id'den büyük
+        # mü). Sadece returncode==0'a güvenmek yetmiyor: main.py seçilen
+        # dönemde alakalı haber bulamazsa hata fırlatmadan sessizce hiçbir
+        # rapor üretmeden çıkabiliyordu (exit code 0) — bu durumda burada
+        # DB'deki EN SON (önceki, muhtemelen eski/silinmiş dosyalı) rapor
+        # yanlışlıkla bu işe "tamamlandı" diye bağlanıyor, kullanıcı da
+        # "PDF yok" / "Görüntüle butonu yok" gibi kafa karıştırıcı bir sahte
+        # başarıyla karşılaşıyordu.
+        yeni_rapor_var = row is not None and row["id"] > onceki_max_id
+
+        if proc.returncode == 0 and yeni_rapor_var:
+            rapor_id = row["id"]
             report_job_guncelle(
                 job_id,
                 durum="tamamlandi",
                 rapor_id=rapor_id,
                 bitis_at=datetime.now().isoformat(),
             )
-            if rapor_id:
-                await _ai_rapor_adi_ata(rapor_id, tenant_id, dict(row), gun, kapsam, rakipler)
+            await _ai_rapor_adi_ata(rapor_id, tenant_id, dict(row), gun, kapsam, rakipler)
+        elif proc.returncode == 2:
+            report_job_guncelle(
+                job_id,
+                durum="hata",
+                hata_mesaji="Seçilen dönemde ilgili haber bulunamadı, rapor oluşturulamadı.",
+                bitis_at=datetime.now().isoformat(),
+            )
+        elif proc.returncode == 0:
+            # returncode 0 ama yeni rapor satırı yok — beklenmeyen durum
+            report_job_guncelle(
+                job_id,
+                durum="hata",
+                hata_mesaji="Rapor üretim süreci tamamlandı ama yeni bir rapor kaydı oluşmadı.",
+                bitis_at=datetime.now().isoformat(),
+            )
         else:
             hata = (stdout or b"").decode("utf-8", errors="replace")[-1000:]
             report_job_guncelle(

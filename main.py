@@ -155,4 +155,11 @@ def _parse_args():
 if __name__ == "__main__":
     _args = _parse_args()
     rakip_filtre = None if _args.sadece_ben else _args.rakipler
-    rapor_uret(gun=_args.gun, rakip_filtre=rakip_filtre, tenant_id=_args.tenant or 1)
+    _sonuc = rapor_uret(gun=_args.gun, rakip_filtre=rakip_filtre, tenant_id=_args.tenant or 1)
+    if _sonuc is None:
+        # Haber bulunamadığı için rapor üretilmedi (bkz. rapor_uret içindeki
+        # "Hiç haber bulunamadı" uyarısı). Exit code 0 dönersek report_jobs.py
+        # bunu "tamamlandı" sanıp DB'deki EN SON (eski/alakasız) raporu bu işe
+        # bağlıyordu — kullanıcıya "PDF yok" hatası veren, kafa karıştırıcı bir
+        # sahte başarı görünümü. Ayrı bir exit code ile net bir "hata" bildir.
+        sys.exit(2)
