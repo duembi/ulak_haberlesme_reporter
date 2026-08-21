@@ -42,19 +42,15 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
         # 1. Haber çekme — RSS + Web crawl
         adim = "haber çekme"
         logger.info("1/7 — Haberler çekiliyor (RSS + Web + Resmi Site)...")
-        haberler       = haberleri_cek()
-        web_haberler   = web_haberleri_cek(gun=7)
-        press_haberler = press_haberleri_cek(gun=7)
+        haberler       = haberleri_cek(gun=gun)
+        web_haberler   = web_haberleri_cek(gun=gun)
+        press_haberler = press_haberleri_cek(gun=gun)
 
         goruldu = {h.url for h in haberler}
         for h in web_haberler + press_haberler:
             if h.url and h.url not in goruldu:
                 haberler.append(h)
                 goruldu.add(h.url)
-
-        if not haberler:
-            logger.warning("Hiç haber bulunamadı, rapor üretilmedi.")
-            return
 
         logger.info(f"Toplam haber (tüm kaynaklar): {len(haberler)}")
 
@@ -65,7 +61,7 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
         if haberler_oncesi != len(haberler):
             logger.info(
                 f"{haberler_oncesi - len(haberler)} haber elendi "
-                f"(tarihi bilinmeyen veya 7+ gün eski)"
+                f"(tarihi bilinmeyen veya {gun}+ gün eski)"
             )
 
         haberler = haberleri_kumele(haberler)
@@ -77,6 +73,15 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
         rakip_haberler = rakip_haberleri_cek(gun=gun, filtre=secili_rakipler)
         hisse_listesi  = hisse_verileri_cek(filtre=secili_rakipler)
         hisse_listesi  = hisse_hareket_acikla(hisse_listesi, rakip_haberler)
+
+        # Kendi şirket haberi yoksa bile rakip haberi varsa rapor değerlidir —
+        # sadece ikisi de tamamen boşsa üretimden vazgeç. (Önceden sadece
+        # kendi haberi yoksa TÜM rapor iptal ediliyordu; rakip haberi bol
+        # olsa bile hiçbir şey üretilmiyordu.)
+        toplam_rakip_haber = sum(len(v) for v in rakip_haberler.values())
+        if not haberler and not toplam_rakip_haber:
+            logger.warning("Ne kendi ne de rakip haberi bulunamadı, rapor üretilmedi.")
+            return
 
         # 3. AI analizi
         adim = "AI analizi"

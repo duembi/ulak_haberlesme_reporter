@@ -89,7 +89,7 @@ def _ulak_alakali_mi(haber: Haber) -> bool:
     return any(k in metin for k in _ALAKA_KELIMELER)
 
 
-def haberleri_cek() -> list[Haber]:
+def haberleri_cek(gun: int = NEWS_API_LOOKBACK_DAYS) -> list[Haber]:
     """Tüm kaynaklardan haberleri toplar, tekilleştirir ve döner."""
     tum_haberler: list[Haber] = []
 
@@ -107,14 +107,14 @@ def haberleri_cek() -> list[Haber]:
     tum_haberler = [h for h in tum_haberler if _ulak_alakali_mi(h)]
     logger.info(f"{onceki - len(tum_haberler)} alakasız haber filtrelendi")
 
-    # Sadece son 7 günün haberlerini al; tarihi bilinmeyenleri at
-    esik = datetime.now() - timedelta(days=NEWS_API_LOOKBACK_DAYS)
+    # Sadece seçilen dönemin haberlerini al; tarihi bilinmeyenleri at
+    esik = datetime.now() - timedelta(days=gun)
     onceki = len(tum_haberler)
     tum_haberler = [h for h in tum_haberler if h.tarih and h.tarih >= esik]
-    logger.info(f"{onceki - len(tum_haberler)} eski haber filtrelendi (>{NEWS_API_LOOKBACK_DAYS} gün)")
+    logger.info(f"{onceki - len(tum_haberler)} eski haber filtrelendi (>{gun} gün)")
 
     # Tarihe göre yeniden eskiye sırala
     tum_haberler.sort(key=lambda h: h.tarih, reverse=True)
 
-    logger.info(f"Toplam tekil haber (son {NEWS_API_LOOKBACK_DAYS} gün): {len(tum_haberler)}")
+    logger.info(f"Toplam tekil haber (son {gun} gün): {len(tum_haberler)}")
     return tum_haberler
