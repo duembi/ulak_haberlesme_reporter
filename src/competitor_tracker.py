@@ -118,6 +118,56 @@ def rakip_haberleri_cek(gun: int = 30, haber_basi: int = 3,
     return sonuc
 
 
+# ── Dashboard kartları: sabit firma seti için dönem bazlı haber sayıları ────────
+
+# Bu 4 firma Ulak Haberleşme'nin ortakları/paydaşları — dashboard kartlarında
+# sabit gösteriliyor (Ayarlar > Rakip Firmalar'daki tenant-özel listeden
+# bağımsız). "SSB" tek başına aranırsa yanlış eşleşme riski taşıdığından
+# (yaygın bir kısaltma) tam adıyla aranıyor.
+DASHBOARD_FIRMALARI = {
+    "ASELSAN": "ASELSAN",
+    "SSB": "Savunma Sanayii Başkanlığı",
+    "SSTEK": "SSTEK",
+    "Havelsan": "HAVELSAN",
+}
+
+_DASHBOARD_DONEMLER = (1, 7, 30)
+_DASHBOARD_CACHE_SN = 600  # 10 dakika — her dashboard yüklemesinde 4 RSS isteği atmamak için
+_dashboard_cache: dict = {"zaman": None, "veri": None}
+
+
+def rakip_kart_sayilari() -> dict[str, dict[int, int]]:
+    """Her sabit dashboard firması için {gün: haber_sayısı} döner (1/7/30 gün)."""
+    simdi = datetime.now()
+
+    onbellek_zaman = _dashboard_cache["zaman"]
+    if onbellek_zaman and (simdi - onbellek_zaman).total_seconds() < _DASHBOARD_CACHE_SN:
+        return _dashboard_cache["veri"]
+
+    sonuc: dict[str, dict[int, int]] = {}
+
+    for ad, sorgu in DASHBOARD_FIRMALARI.items():
+        tarihler: list[datetime] = []
+        try:
+            feed = feedparser.parse(_rss_url(sorgu, "tr"))
+            for entry in feed.entries:
+                try:
+                    tarihler.append(datetime(*entry.published_parsed[:6]))
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Dashboard rakip sayı hatası ({ad}): {e}")
+
+        sonuc[ad] = {
+            gun: sum(1 for t in tarihler if t >= simdi - timedelta(days=gun))
+            for gun in _DASHBOARD_DONEMLER
+        }
+
+    _dashboard_cache["zaman"] = simdi
+    _dashboard_cache["veri"] = sonuc
+    return sonuc
+
+
 # ── Borsa verisi ─────────────────────────────────────────────────────────────
 
 def _piyasa_degeri_formatla(deger) -> str:

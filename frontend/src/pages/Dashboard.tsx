@@ -225,6 +225,48 @@ function UlakKarti() {
   );
 }
 
+// ── Rakip firma kartları (ASELSAN, SSB, SSTEK, Havelsan) ────────────────────────
+
+const RAKIP_KART_DONEMLER = [
+  { key: "1", label: "Bugün" },
+  { key: "7", label: "Bu Hafta" },
+  { key: "30", label: "Bu Ay" },
+] as const;
+
+function RakipKarti({ ad, sayilar }: { ad: string; sayilar?: Record<string, number> }) {
+  return (
+    <div className="card p-5">
+      <h3 className="text-sm font-semibold text-slate-900 mb-3">{ad}</h3>
+      <div className="space-y-2">
+        {RAKIP_KART_DONEMLER.map((d) => (
+          <div key={d.key} className="flex items-center justify-between text-sm">
+            <span className="text-slate-500">{d.label}</span>
+            <span className="font-semibold text-slate-800">{sayilar?.[d.key] ?? 0}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RakipKartlari() {
+  const { data, isLoading } = useQuery<Record<string, Record<string, number>>>({
+    queryKey: ["rakip-kartlar"],
+    queryFn: statsApi.rakipKartlar,
+    staleTime: 5 * 60_000,
+  });
+
+  const firmalar = ["ASELSAN", "SSB", "SSTEK", "Havelsan"];
+
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {isLoading
+        ? firmalar.map((ad) => <div key={ad} className="card h-36 bg-slate-50 animate-pulse" />)
+        : firmalar.map((ad) => <RakipKarti key={ad} ad={ad} sayilar={data?.[ad]} />)}
+    </div>
+  );
+}
+
 // ── Ana bileşen ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -267,6 +309,9 @@ export default function Dashboard() {
 
       {/* ULAK kartı — dönem bazlı haber popup'ı */}
       <UlakKarti />
+
+      {/* Rakip firma kartları */}
+      <RakipKartlari />
 
       {/* Timeline grafik — tam genişlik */}
       <TimelineChart />

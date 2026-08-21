@@ -9,6 +9,7 @@ from api.routers import (
 from api.routers import llm_configs, tenant_competitors, report_jobs
 from api.schemas import IstatistikYanit
 from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al
+from src.competitor_tracker import rakip_kart_sayilari
 
 app = FastAPI(
     title="Medya İstihbarat API",
@@ -69,6 +70,16 @@ async def timeline(gun: int = 30, user: dict = Depends(get_current_user)):
 async def stats_haberler(gun: int = 1, user: dict = Depends(get_current_user)):
     """Belirtilen dönemdeki (Bugün=1, Bu Hafta=7, Bu Ay=30, Bu Sene=365) haberler."""
     return haberler_donem_al(tenant_id=user["tenant_id"], gun=gun)
+
+
+@app.get("/api/stats/rakip-kartlar", tags=["Stats"])
+def stats_rakip_kartlari(user: dict = Depends(get_current_user)):
+    """
+    Dashboard'daki sabit 4 firma kartı (ASELSAN, SSB, SSTEK, Havelsan) için
+    dönem bazlı haber sayıları. Senkron/bloklayıcı (RSS + XML parse) olduğundan
+    bilerek `def` (async değil) tanımlandı — FastAPI otomatik thread pool'a atar.
+    """
+    return rakip_kart_sayilari()
 
 
 @app.get("/api/health", tags=["Health"])
