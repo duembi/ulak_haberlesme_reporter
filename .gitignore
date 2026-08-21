@@ -44,3 +44,4 @@ frontend/dist/
 scripts/_test_*
 indir.jfif
 *.pdf
+!assets/marka/*.pdf
