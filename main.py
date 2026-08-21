@@ -17,7 +17,6 @@ from src.crisis_detector import kriz_degerlendir, KrizSeviyesi
 from src.clusterer import haberleri_kumele
 from src.agent import ajan_calistir, ajan_raporu_formatla
 from src.press_scraper import press_haberleri_cek
-from src.customer_voice import musteri_sesi_topla
 from src.linkedin_tracker import linkedin_gonderileri_cek
 
 logger.remove()
@@ -41,7 +40,7 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
 
         # 1. Haber çekme — RSS + Web crawl
         adim = "haber çekme"
-        logger.info("1/7 — Haberler çekiliyor (RSS + Web + Resmi Site)...")
+        logger.info("1/6 — Haberler çekiliyor (RSS + Web + Resmi Site)...")
         haberler       = haberleri_cek(gun=gun)
         web_haberler   = web_haberleri_cek(gun=gun)
         press_haberler = press_haberleri_cek(gun=gun)
@@ -69,7 +68,7 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
         # 2. Rakip firma haberleri + borsa verileri
         adim = "rakip/borsa verisi"
         secili_rakipler = [r.strip() for r in rakip_filtre.split(",")] if rakip_filtre else None
-        logger.info("2/7 — Rakip firma haberleri ve borsa verileri çekiliyor...")
+        logger.info("2/6 — Rakip firma haberleri ve borsa verileri çekiliyor...")
         rakip_haberler = rakip_haberleri_cek(gun=gun, filtre=secili_rakipler)
         hisse_listesi  = hisse_verileri_cek(filtre=secili_rakipler)
         hisse_listesi  = hisse_hareket_acikla(hisse_listesi, rakip_haberler)
@@ -85,7 +84,7 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
 
         # 3. AI analizi
         adim = "AI analizi"
-        logger.info(f"3/7 — {len(haberler)} haber analiz ediliyor...")
+        logger.info(f"3/6 — {len(haberler)} haber analiz ediliyor...")
         haberler = haberleri_analiz_et(haberler)
 
         # 4. Kriz değerlendirmesi
@@ -98,32 +97,27 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
 
         # 5. Özerk ajan değerlendirmesi
         adim = "ajan analizi"
-        logger.info("4/7 — Özerk ajan haberleri değerlendiriyor...")
+        logger.info("4/6 — Özerk ajan haberleri değerlendiriyor...")
         ajan_raporu = ajan_calistir(haberler)
         ajan_ozeti  = ajan_raporu_formatla(ajan_raporu)
 
-        # 6. Müşteri sesi
-        adim = "müşteri sesi"
-        logger.info("5/7 — Müşteri yorumları toplanıyor...")
-        musteri_raporu = musteri_sesi_topla(gun=7)
-
-        # 7. LinkedIn
+        # 6. LinkedIn
         adim = "LinkedIn"
-        logger.info("6/7 — LinkedIn gönderileri toplanıyor...")
+        logger.info("5/6 — LinkedIn gönderileri toplanıyor...")
         linkedin_raporu = linkedin_gonderileri_cek(gun=7)
 
-        # 8. Yönetici özeti
+        # 7. Yönetici özeti — PDF'de artık gösterilmiyor ama haftalık
+        # e-posta bildiriminin gövdesi için hâlâ üretiliyor (rapor_gonder).
         adim = "yönetici özeti"
-        logger.info("7/7 — Yönetici özeti üretiliyor...")
+        logger.info("6/6 — Yönetici özeti üretiliyor (e-posta için)...")
         yonetici_ozeti = ajan_ozeti + "\n\n" + yonetici_ozeti_uret(haberler)
 
         # Rapor üret ve kaydet
         adim = "rapor üretimi"
         logger.info("Rapor oluşturuluyor ve kaydediliyor...")
-        cikti = rapor_olustur(haberler, yonetici_ozeti,
+        cikti = rapor_olustur(haberler,
                               rakip_haberler=rakip_haberler,
                               hisse_listesi=hisse_listesi,
-                              musteri_raporu=musteri_raporu,
                               linkedin_raporu=linkedin_raporu)
 
         bitis = datetime.now()

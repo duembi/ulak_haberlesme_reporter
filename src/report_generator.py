@@ -10,13 +10,9 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     PageBreak, HRFlowable, Image,
 )
-from reportlab.graphics.shapes import Drawing, String, Line
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.shapes import Drawing, Line
 from reportlab.graphics.charts.lineplots import LinePlot
 from reportlab.graphics.charts.legends import Legend
-from reportlab.graphics.widgets.markers import makeMarker
-from reportlab.graphics import renderPDF
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from loguru import logger
@@ -26,8 +22,6 @@ import html
 from config.settings import REPORT_OUTPUT_DIR, BASE_DIR
 from src.news_fetcher import Haber
 from src.competitor_tracker import RakipHaber, HisseSenedi
-from src.database import sentiment_trend_al
-from src.customer_voice import MusteriSesiRaporu
 from src.linkedin_tracker import LinkedInRaporu, LinkedInGonderi
 
 def _guvli_metin(metin: str) -> str:
@@ -37,25 +31,6 @@ def _guvli_metin(metin: str) -> str:
     # HTML etiketlerini sil (<b>foo</b> → foo), ardından & < > karakterlerini escape et
     temiz = re.sub(r"<[^>]+>", "", metin)
     return html.escape(temiz)
-
-
-_ATIF_RE = re.compile(r"\[(\d+)\]")
-
-
-def _atiflari_baglantila(guvli_metin: str, haberler: list[Haber]) -> str:
-    """
-    Yönetici özetindeki [n] atıflarını, Referanslar bölümündeki aynı numaralı
-    habere tıklanabilir link olarak dönüştürür. guvli_metin zaten _guvli_metin
-    ile escape edilmiş olmalı — bu fonksiyon sonrasında çağrılır.
-    """
-    def degistir(m: re.Match) -> str:
-        n = int(m.group(1))
-        if 1 <= n <= len(haberler) and haberler[n - 1].url:
-            href = html.escape(haberler[n - 1].url, quote=True)
-            return f'<link href="{href}" color="#0A66C2"><u>[{n}]</u></link>'
-        return m.group(0)
-
-    return _ATIF_RE.sub(degistir, guvli_metin)
 
 
 _LOGO_YOLU = None  # logo kaldırıldı
@@ -139,167 +114,6 @@ def _stiller():
     }
 
 
-# ── Grafik yardımcıları ──────────────────────────────────────────────────────
-
-def _pasta_grafik(etiketler: list[str], degerler: list[int],
-                  renk_listesi: list, genislik=7*cm, yukseklik=6*cm) -> Drawing:
-    """Genel amaçlı pasta grafik Drawing döner."""
-    d = Drawing(genislik, yukseklik)
-
-    pie = Pie()
-    pie.x = genislik * 0.18
-    pie.y = yukseklik * 0.18
-    pie.width  = min(genislik, yukseklik) * 0.55
-    pie.height = min(genislik, yukseklik) * 0.55
-    pie.data   = degerler
-    pie.labels = [f"%{v/sum(degerler)*100:.0f}" if sum(degerler) else "0"
-                  for v in degerler]
-    pie.sideLabels    = False
-    pie.simpleLabels  = True
-    pie.slices.strokeWidth  = 0.5
-    pie.slices.strokeColor  = colors.white
-    pie.slices.labelRadius  = 0.65
-    pie.slices.fontName     = _f()
-    pie.slices.fontSize     = 8
-    pie.slices.fontColor    = colors.white
-
-    _renk_havuzu = (renk_listesi * ((len(degerler) // max(len(renk_listesi), 1)) + 1))
-    for i in range(len(degerler)):
-        pie.slices[i].fillColor = _renk_havuzu[i]
-
-    legend = Legend()
-    legend.x           = genislik * 0.68
-    legend.y           = yukseklik * 0.72
-    legend.dx           = 8
-    legend.dy           = 8
-    legend.fontName     = _f()
-    legend.fontSize     = 7
-    # Renk listesi yetersizse döngüsel olarak tekrarla
-    _renkler = (renk_listesi * ((len(etiketler) // max(len(renk_listesi), 1)) + 1))
-    legend.colorNamePairs = [(_renkler[i], f"{etiketler[i]} ({degerler[i]})")
-                              for i in range(len(etiketler))]
-    legend.strokeColor  = None
-    legend.columnMaximum = 10
-
-    d.add(pie)
-    d.add(legend)
-    return d
-
-
-def _cubuk_grafik(etiketler: list[str], degerler: list[int],
-                  renk_listesi: list, genislik=16*cm, yukseklik=7*cm) -> Drawing:
-    """Dikey çubuk grafik Drawing döner."""
-    d = Drawing(genislik, yukseklik)
-
-    bar = VerticalBarChart()
-    bar.x      = 2.5 * cm
-    bar.y      = 1.2 * cm
-    bar.width  = genislik - 3.5 * cm
-    bar.height = yukseklik - 2 * cm
-    bar.data   = [degerler]
-    bar.categoryAxis.categoryNames = etiketler
-    bar.categoryAxis.labels.fontName  = _f()
-    bar.categoryAxis.labels.fontSize  = 8
-    bar.categoryAxis.labels.angle     = 15
-    bar.categoryAxis.labels.boxAnchor = "ne"
-    bar.valueAxis.labels.fontName     = _f()
-    bar.valueAxis.labels.fontSize     = 8
-    bar.valueAxis.valueMin            = 0
-    bar.valueAxis.valueStep           = max(1, max(degerler) // 5) if degerler else 1
-    bar.bars[0].fillColor             = RENK_MAVI
-    bar.groupSpacing                  = 10
-
-    for i, renk in enumerate(renk_listesi[:len(degerler)]):
-        bar.bars[(0, i)].fillColor = renk
-
-    # Değer etiketleri çubukların üstüne
-    for i, val in enumerate(degerler):
-        if val == 0:
-            continue
-        bar_w  = bar.width / len(degerler)
-        bar_x  = bar.x + i * bar_w + bar_w / 2
-        bar_h  = bar.y + (val / (max(degerler) or 1)) * bar.height
-        lbl = String(bar_x, bar_h + 3, str(val),
-                     fontName=_f(), fontSize=8, fillColor=RENK_GRI,
-                     textAnchor="middle")
-        d.add(lbl)
-
-    d.add(bar)
-    return d
-
-
-def _trend_grafigi(genislik=16*cm, yukseklik=6*cm) -> Drawing | None:
-    """
-    Son 8 haftanın olumlu/olumsuz/nötr haber sayılarını çizgi grafik olarak döner.
-    Veritabanında yeterli veri yoksa None döner.
-    """
-    trend = sentiment_trend_al(hafta_sayisi=8)
-    if not trend:
-        return None
-
-    # Hafta bazında grupla: {hafta: {sentiment: sayi}}
-    haftalar: dict[str, dict[str, int]] = {}
-    for satir in trend:
-        h = satir["hafta"]
-        haftalar.setdefault(h, {})
-        haftalar[h][satir["sentiment"]] = satir["sayi"]
-
-    sirali_haftalar = sorted(haftalar.keys())
-    if len(sirali_haftalar) < 2:
-        return None
-
-    etiketler   = sirali_haftalar
-    olumlu_data = [(i, haftalar[h].get("olumlu",  0)) for i, h in enumerate(etiketler)]
-    olumsuz_data= [(i, haftalar[h].get("olumsuz", 0)) for i, h in enumerate(etiketler)]
-    notr_data   = [(i, haftalar[h].get("nötr",    0)) for i, h in enumerate(etiketler)]
-
-    d    = Drawing(genislik, yukseklik)
-    plot = LinePlot()
-    plot.x      = 2*cm
-    plot.y      = 1.2*cm
-    plot.width  = genislik - 3.2*cm
-    plot.height = yukseklik - 1.8*cm
-
-    tum_deger = [v for _, v in olumlu_data + olumsuz_data + notr_data]
-    plot.yValueAxis.valueMin  = 0
-    plot.yValueAxis.valueMax  = max(tum_deger, default=5) + 1
-    plot.yValueAxis.valueStep = max(1, (max(tum_deger, default=5) + 1) // 5)
-    plot.yValueAxis.labels.fontName = _f()
-    plot.yValueAxis.labels.fontSize = 7
-    plot.xValueAxis.valueMin  = 0
-    plot.xValueAxis.valueMax  = len(etiketler) - 1
-    plot.xValueAxis.valueStep = 1
-    plot.xValueAxis.labelTextFormat = lambda v: etiketler[int(round(v))] if 0 <= int(round(v)) < len(etiketler) else ""
-    plot.xValueAxis.labels.fontName = _f()
-    plot.xValueAxis.labels.fontSize = 6
-    plot.xValueAxis.labels.angle    = 30
-
-    plot.data = [olumlu_data, olumsuz_data, notr_data]
-    plot.lines[0].strokeColor = RENK_YESIL
-    plot.lines[0].strokeWidth = 2
-    plot.lines[1].strokeColor = RENK_KIRMIZI
-    plot.lines[1].strokeWidth = 2
-    plot.lines[2].strokeColor = RENK_GRI
-    plot.lines[2].strokeWidth = 1.5
-
-    legend = Legend()
-    legend.x          = genislik - 3.5*cm
-    legend.y          = yukseklik - 0.8*cm
-    legend.dx, legend.dy = 10, 6
-    legend.fontName   = _f()
-    legend.fontSize   = 8
-    legend.strokeColor= None
-    legend.colorNamePairs = [
-        (RENK_YESIL,   "Olumlu"),
-        (RENK_KIRMIZI, "Olumsuz"),
-        (RENK_GRI,     "Nötr"),
-    ]
-
-    d.add(plot)
-    d.add(legend)
-    return d
-
-
 # ── Rapor bölümleri ──────────────────────────────────────────────────────────
 
 def _sayfa_numarasi(canvas, doc):
@@ -338,125 +152,6 @@ def _kapak(ic, s, baslangic, bitis, haber_sayisi):
     ic.append(Spacer(1, 0.3*cm))
     ic.append(Paragraph(f"Üretim tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", s["kapak_tarih"]))
     ic.append(PageBreak())
-
-
-def _istatistik_paneli(ic, s, haberler):
-    """Sentiment tablosu + pasta grafik yan yana."""
-    ic.append(Paragraph("Medya Analizi", s["baslik1"]))
-    ic.append(HRFlowable(width="100%", thickness=1.5, color=RENK_MAVI))
-    ic.append(Spacer(1, 0.4*cm))
-
-    sayim   = Counter(h.sentiment for h in haberler)
-    toplam  = len(haberler)
-    sentimentler = ["olumlu", "olumsuz", "nötr"]
-    renkler_s    = [RENK_YESIL, RENK_KIRMIZI, RENK_GRI]
-
-    # — Sentiment tablo verisi
-    tablo_veri = [["Sentiment", "Haber", "Oran"]]
-    for snt in sentimentler:
-        sayi = sayim.get(snt, 0)
-        oran = f"%{sayi/toplam*100:.1f}" if toplam else "%-"
-        tablo_veri.append([snt.capitalize(), str(sayi), oran])
-
-    tablo = Table(tablo_veri, colWidths=[4*cm, 3*cm, 3*cm])
-    tablo.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0), (-1,0),  RENK_MAVI),
-        ("TEXTCOLOR",     (0,0), (-1,0),  colors.white),
-        ("FONTNAME",      (0,0), (-1,0),  _fb()),
-        ("FONTSIZE",      (0,0), (-1,-1), 10),
-        ("FONTNAME",      (0,1), (-1,-1), _f()),
-        ("ALIGN",         (1,0), (-1,-1), "CENTER"),
-        ("ROWBACKGROUNDS",(0,1), (-1,-1), [RENK_ACIK, colors.white]),
-        ("GRID",          (0,0), (-1,-1), 0.5, RENK_CIZGI),
-        ("TOPPADDING",    (0,0), (-1,-1), 7),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
-        ("TEXTCOLOR",     (0,1), (0,1),   RENK_YESIL),
-        ("TEXTCOLOR",     (0,2), (0,2),   RENK_KIRMIZI),
-        ("TEXTCOLOR",     (0,3), (0,3),   RENK_GRI),
-    ]))
-
-    # — Sentiment pasta grafik
-    degerler_s = [sayim.get(snt, 0) for snt in sentimentler]
-    if sum(degerler_s) > 0:
-        pasta_s = _pasta_grafik(
-            [s.capitalize() for s in sentimentler],
-            degerler_s, renkler_s,
-            genislik=8*cm, yukseklik=6*cm,
-        )
-        yan_yana = Table(
-            [[tablo, pasta_s]],
-            colWidths=[10*cm, 8*cm],
-        )
-        yan_yana.setStyle(TableStyle([
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("LEFTPADDING",  (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ]))
-        ic.append(yan_yana)
-    else:
-        ic.append(tablo)
-
-    ic.append(Spacer(1, 0.6*cm))
-
-    # — Kategori çubuk grafik
-    ic.append(Paragraph("Kategori Dağılımı", s["baslik2"]))
-    kat_sayim = Counter(h.kategori for h in haberler)
-    kat_etiket = [k.capitalize() for k in KATEGORI_SIRA if kat_sayim.get(k, 0) > 0]
-    kat_deger  = [kat_sayim.get(k, 0) for k in KATEGORI_SIRA if kat_sayim.get(k, 0) > 0]
-    kat_renkler = [KATEGORI_RENKLER[i] for i, k in enumerate(KATEGORI_SIRA) if kat_sayim.get(k, 0) > 0]
-
-    if kat_deger:
-        cubuk = _cubuk_grafik(kat_etiket, kat_deger, kat_renkler,
-                              genislik=16*cm, yukseklik=7*cm)
-        ic.append(cubuk)
-
-    ic.append(Spacer(1, 0.6*cm))
-
-    # — Dil ve kaynak pasta grafikleri yan yana
-    dil_sayim  = Counter(h.dil for h in haberler)
-    kaynak_sayim = Counter(
-        "Google News" if "RSS" in h.kaynak else "Web"
-        for h in haberler
-    )
-
-    dil_etiket    = list(dil_sayim.keys())
-    dil_deger     = list(dil_sayim.values())
-    dil_renkler   = [RENK_MAVI, RENK_TURUNCU][:len(dil_etiket)]
-
-    kaynak_etiket  = list(kaynak_sayim.keys())
-    kaynak_deger   = list(kaynak_sayim.values())
-    kaynak_renkler = [RENK_MAVI, RENK_YESIL, RENK_TURUNCU][:len(kaynak_etiket)]
-
-    if dil_deger and kaynak_deger:
-        pasta_dil    = _pasta_grafik(dil_etiket, dil_deger, dil_renkler,
-                                     genislik=8.5*cm, yukseklik=6*cm)
-        pasta_kaynak = _pasta_grafik(kaynak_etiket, kaynak_deger, kaynak_renkler,
-                                     genislik=8.5*cm, yukseklik=6*cm)
-
-        baslik_dil    = Paragraph("Dil Dağılımı",    s["grafik_baslik"])
-        baslik_kaynak = Paragraph("Kaynak Dağılımı", s["grafik_baslik"])
-
-        iki_grafik = Table(
-            [[baslik_dil, baslik_kaynak],
-             [pasta_dil,  pasta_kaynak]],
-            colWidths=[9*cm, 9*cm],
-        )
-        iki_grafik.setStyle(TableStyle([
-            ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
-            ("ALIGN",        (0,0), (-1,-1), "CENTER"),
-            ("LEFTPADDING",  (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ]))
-        ic.append(iki_grafik)
-
-    ic.append(Spacer(1, 0.3*cm))
-
-    # — Haftalık trend grafiği (DB'den)
-    trend = _trend_grafigi()
-    if trend:
-        ic.append(Paragraph("Haftalık Sentiment Trendi (Son 8 Hafta)", s["baslik2"]))
-        ic.append(trend)
-        ic.append(Spacer(1, 0.3*cm))
 
 
 def _kategori_bolumu(ic, s, haberler):
@@ -671,174 +366,6 @@ def _rakip_bolumu(ic, s,
         ic.append(Spacer(1, 0.3*cm))
 
 
-def _musteri_sesi_bolumu(ic, s, musteri_raporu: MusteriSesiRaporu):
-    ic.append(PageBreak())
-    ic.append(Paragraph("Müşteri Sesi Analizi", s["baslik1"]))
-    ic.append(HRFlowable(width="100%", thickness=1.5, color=RENK_MAVI))
-    ic.append(Spacer(1, 0.4*cm))
-
-    yorumlar = musteri_raporu.yorumlar
-    if not yorumlar:
-        ic.append(Paragraph("Bu dönemde müşteri yorumu bulunamadı.", s["govde"]))
-        return
-
-    # — Özet metin
-    if musteri_raporu.tema_ozeti:
-        ic.append(Paragraph(_guvli_metin(musteri_raporu.tema_ozeti), s["govde"]))
-        ic.append(Spacer(1, 0.4*cm))
-
-    # — Genel istatistik tablo + tip dağılımı pasta grafik yan yana
-    tip_sayim  = Counter(y.tip for y in yorumlar if y.tip)
-    platform_sayim = Counter(y.platform for y in yorumlar)
-    toplam = len(yorumlar)
-
-    tablo_veri = [["Tip", "Yorum", "Oran"]]
-    tip_sira = ["sikayet", "tesekkur", "oneri", "notr"]
-    tip_renk = [RENK_KIRMIZI, RENK_YESIL, RENK_MAVI, RENK_GRI]
-    tip_etiket_map = {"sikayet": "Şikayet", "tesekkur": "Teşekkür",
-                      "oneri": "Öneri", "notr": "Nötr"}
-    for tip in tip_sira:
-        sayi = tip_sayim.get(tip, 0)
-        if sayi == 0:
-            continue
-        oran = f"%{sayi/toplam*100:.1f}" if toplam else "%-"
-        tablo_veri.append([tip_etiket_map.get(tip, tip), str(sayi), oran])
-
-    tablo = Table(tablo_veri, colWidths=[4*cm, 3*cm, 3*cm])
-    tablo.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0), (-1,0),  RENK_MAVI),
-        ("TEXTCOLOR",     (0,0), (-1,0),  colors.white),
-        ("FONTNAME",      (0,0), (-1,0),  _fb()),
-        ("FONTSIZE",      (0,0), (-1,-1), 10),
-        ("FONTNAME",      (0,1), (-1,-1), _f()),
-        ("ALIGN",         (1,0), (-1,-1), "CENTER"),
-        ("ROWBACKGROUNDS",(0,1), (-1,-1), [RENK_ACIK, colors.white]),
-        ("GRID",          (0,0), (-1,-1), 0.5, RENK_CIZGI),
-        ("TOPPADDING",    (0,0), (-1,-1), 7),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
-    ]))
-
-    tip_degerler = [tip_sayim.get(t, 0) for t in tip_sira if tip_sayim.get(t, 0) > 0]
-    tip_etiketler = [tip_etiket_map.get(t, t) for t in tip_sira if tip_sayim.get(t, 0) > 0]
-    tip_renk_filtre = [tip_renk[i] for i, t in enumerate(tip_sira) if tip_sayim.get(t, 0) > 0]
-
-    if sum(tip_degerler) > 0:
-        pasta = _pasta_grafik(tip_etiketler, tip_degerler, tip_renk_filtre,
-                              genislik=8*cm, yukseklik=6*cm)
-        yan_yana = Table([[tablo, pasta]], colWidths=[10*cm, 8*cm])
-        yan_yana.setStyle(TableStyle([
-            ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
-            ("LEFTPADDING",  (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ]))
-        ic.append(yan_yana)
-    else:
-        ic.append(tablo)
-
-    ic.append(Spacer(1, 0.5*cm))
-
-    # — Platform dağılımı
-    if platform_sayim:
-        ic.append(Paragraph("Platform Dağılımı", s["baslik2"]))
-        plat_etiket = list(platform_sayim.keys())
-        plat_deger  = list(platform_sayim.values())
-        plat_renk   = [RENK_MAVI, RENK_YESIL, RENK_TURUNCU, RENK_MOR, RENK_GRI][:len(plat_etiket)]
-        if sum(plat_deger) > 0:
-            plat_pasta = _pasta_grafik(plat_etiket, plat_deger, plat_renk,
-                                       genislik=12*cm, yukseklik=6*cm)
-            ic.append(plat_pasta)
-        ic.append(Spacer(1, 0.4*cm))
-
-    # — En sık şikayet / teşekkür temaları
-    if musteri_raporu.en_sik_sikayet or musteri_raporu.en_sik_tesekkur:
-        tema_veri = [["En Sık Şikayet Temaları", "En Sık Teşekkür Temaları"]]
-        sikayet_col = "\n".join(f"• {t}" for t in musteri_raporu.en_sik_sikayet) or "—"
-        tesekkur_col = "\n".join(f"• {t}" for t in musteri_raporu.en_sik_tesekkur) or "—"
-        tema_veri.append([sikayet_col, tesekkur_col])
-
-        tema_tablo = Table(tema_veri, colWidths=[8.5*cm, 8.5*cm])
-        tema_tablo.setStyle(TableStyle([
-            ("BACKGROUND",    (0,0), (-1,0),  RENK_MAVI),
-            ("TEXTCOLOR",     (0,0), (-1,0),  colors.white),
-            ("FONTNAME",      (0,0), (-1,0),  _fb()),
-            ("FONTSIZE",      (0,0), (-1,-1), 9),
-            ("FONTNAME",      (0,1), (-1,-1), _f()),
-            ("VALIGN",        (0,0), (-1,-1), "TOP"),
-            ("GRID",          (0,0), (-1,-1), 0.5, RENK_CIZGI),
-            ("TOPPADDING",    (0,0), (-1,-1), 8),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-            ("LEFTPADDING",   (0,0), (-1,-1), 8),
-            ("BACKGROUND",    (0,1), (0,1),   colors.HexColor("#FDEDEC")),
-            ("BACKGROUND",    (1,1), (1,1),   colors.HexColor("#EAFAF1")),
-        ]))
-        ic.append(tema_tablo)
-        ic.append(Spacer(1, 0.5*cm))
-
-    # — Tüm yorumlar içerikleriyle listelenir (tip'e göre gruplandırılmış)
-    tip_sira_goster = ["sikayet", "oneri", "notr", "tesekkur"]
-    tip_baslik_map  = {
-        "sikayet":  "Şikayetler",
-        "tesekkur": "Teşekkür ve Olumlu Görüşler",
-        "oneri":    "Öneriler",
-        "notr":     "Genel Yorumlar",
-    }
-    tip_renk_hex = {
-        "sikayet":  "#C0392B",
-        "tesekkur": "#1E8449",
-        "oneri":    "#1A5276",
-        "notr":     "#5D6D7E",
-    }
-
-    for tip in tip_sira_goster:
-        grup = [y for y in yorumlar if y.tip == tip]
-        if not grup:
-            continue
-        ic.append(Paragraph(
-            f'{tip_baslik_map.get(tip, tip.capitalize())} ({len(grup)})',
-            s["baslik2"],
-        ))
-        ic.append(HRFlowable(width="100%", thickness=0.5, color=RENK_CIZGI))
-        ic.append(Spacer(1, 0.15*cm))
-        renk_hex = tip_renk_hex.get(tip, "#5D6D7E")
-
-        for y in grup:
-            tarih_str = y.tarih.strftime("%d.%m.%Y") if y.tarih else ""
-            tema_str  = f" — {y.tema}" if y.tema else ""
-            ic.append(Paragraph(
-                f'<font color="{renk_hex}">■</font>  '
-                f'<b>{_guvli_metin(y.baslik)}</b>  '
-                f'<font color="#5D6D7E" size="8">{y.platform}{tema_str}  {tarih_str}</font>',
-                s["bullet"],
-            ))
-            if y.icerik and y.icerik.strip() != y.baslik.strip():
-                ozet = y.icerik[:400]
-                ic.append(Paragraph(
-                    f'{_guvli_metin(ozet)}{"…" if len(y.icerik) > 400 else ""}',
-                    s["govde_ic"],
-                ))
-        ic.append(Spacer(1, 0.3*cm))
-
-    # — Tip'i belirlenememiş yorumlar (fallback — tip boş)
-    belirsiz = [y for y in yorumlar if not y.tip]
-    if belirsiz:
-        ic.append(Paragraph(f"Diğer Yorumlar ({len(belirsiz)})", s["baslik2"]))
-        ic.append(HRFlowable(width="100%", thickness=0.5, color=RENK_CIZGI))
-        ic.append(Spacer(1, 0.15*cm))
-        for y in belirsiz:
-            tarih_str = y.tarih.strftime("%d.%m.%Y") if y.tarih else ""
-            ic.append(Paragraph(
-                f'<b>{_guvli_metin(y.baslik)}</b>  '
-                f'<font color="#5D6D7E" size="8">{y.platform}  {tarih_str}</font>',
-                s["bullet"],
-            ))
-            if y.icerik and y.icerik.strip() != y.baslik.strip():
-                ic.append(Paragraph(
-                    f'{_guvli_metin(y.icerik[:400])}',
-                    s["govde_ic"],
-                ))
-        ic.append(Spacer(1, 0.3*cm))
-
-
 def _linkedin_bolumu(ic, s, linkedin_raporu: LinkedInRaporu):
     ic.append(PageBreak())
     ic.append(Paragraph("LinkedIn Şirket Sayfası", s["baslik1"]))
@@ -945,10 +472,9 @@ def _referanslar(ic, s, haberler):
 
 # ── Ana fonksiyon ────────────────────────────────────────────────────────────
 
-def rapor_olustur(haberler: list[Haber], yonetici_ozeti: str,
+def rapor_olustur(haberler: list[Haber],
                   rakip_haberler: dict | None = None,
                   hisse_listesi: list | None = None,
-                  musteri_raporu: MusteriSesiRaporu | None = None,
                   linkedin_raporu: LinkedInRaporu | None = None) -> Path:
     bitis     = datetime.now()
     baslangic = bitis - timedelta(days=7)
@@ -973,35 +499,12 @@ def rapor_olustur(haberler: list[Haber], yonetici_ozeti: str,
 
     _kapak(ic, s, baslangic, bitis, len(haberler))
 
-    # Yönetici özeti
-    ic.append(Paragraph("Yönetici Özeti", s["baslik1"]))
-    ic.append(HRFlowable(width="100%", thickness=1.5, color=RENK_MAVI))
-    ic.append(Spacer(1, 0.3*cm))
-    for paragraf in yonetici_ozeti.split("\n"):
-        if paragraf.strip():
-            metin = _atiflari_baglantila(_guvli_metin(paragraf.strip()), haberler)
-            ic.append(Paragraph(metin, s["govde"]))
-    if any(_ATIF_RE.search(p) for p in yonetici_ozeti.split("\n")):
-        ic.append(Paragraph(
-            "Köşeli parantez içindeki numaralar (ör. [3]) tıklanabilir — ilgili haberin "
-            "kaynağına götürür; tam listesi raporun sonundaki Referanslar bölümündedir.",
-            s["kucuk"],
-        ))
-    ic.append(Spacer(1, 0.5*cm))
-
-    # Grafikler + istatistikler
-    _istatistik_paneli(ic, s, haberler)
-
     # Haber detayları
     _kategori_bolumu(ic, s, haberler)
 
     # Rakip firma analizi
     if rakip_haberler is not None or hisse_listesi:
         _rakip_bolumu(ic, s, rakip_haberler or {}, hisse_listesi or [])
-
-    # Müşteri sesi analizi
-    if musteri_raporu is not None:
-        _musteri_sesi_bolumu(ic, s, musteri_raporu)
 
     # LinkedIn şirket sayfası
     if linkedin_raporu is not None:
