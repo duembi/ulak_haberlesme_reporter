@@ -5,8 +5,7 @@ import time
 from datetime import datetime
 from loguru import logger
 
-from src.news_fetcher import Haber
-from config.settings import ARAMA_KATEGORILERI
+from src.news_fetcher import Haber, _ALAKA_KELIMELER
 
 try:
     from ddgs import DDGS
@@ -41,12 +40,12 @@ _ARAMA_SORGULARI = [
     ("Ulak Haberlesme delay disruption", "en"),
 ]
 
-# Kategori anahtar kelimelerinden otomatik alaka seti oluştur
-_ALAKA_KELIMELER: set[str] = {"ulak haberleşme", "ulak haberlesme"}
-for _kat_kelimeler in ARAMA_KATEGORILERI.values():
-    for _kelimeler in _kat_kelimeler.values():
-        for _k in _kelimeler:
-            _ALAKA_KELIMELER.add(_k.lower().split()[0])  # ilk kelime yeterli
+# news_fetcher.py ile aynı, elle seçilmiş çok-kelimeli alaka listesi kullanılır
+# (ÖNEMLİ: burada kelimelerin "ilk kelimesini" alıp otomatik set üretmeye ASLA
+# dönme — "ulak" tek başına Türkçe'de sıradan bir kelime/isim, bu yüzden alakasız
+# haberleri (ör. "ulak sistemi" geçen bambaşka bir olay) yanlışlıkla içeri alır.
+# Bkz. gerçek olay: Ulak Haberleşme ile hiç ilgisi olmayan bir suç örgütü haberi
+# sırf "ulak sistemi" ifadesi geçtiği için rapora girmişti.)
 
 
 def sayfa_metni_cek(url: str) -> str:

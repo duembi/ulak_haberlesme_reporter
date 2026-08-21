@@ -45,6 +45,12 @@ Aşağıdaki haber özetlerini ve sentiment bilgilerini kullanarak Türkçe, ak�
 uzunluğunda yönetici özeti yaz. Önemli gelişmeleri, genel medya tonunu, önceki haftalarla \
 kıyaslamalı trendi ve dikkat çeken konuları vurgula.
 
+DİKKAT — yanlış eşleşme riski: "Ulak" Türkçe'de sıradan bir kelimedir (haberci/kurye anlamında) \
+ve şirketle hiç ilgisi olmayan haberlerde de geçebilir (ör. başka bir kurumun/olayın "ulak sistemi" \
+diye andığı bir şey). Bir haberde şirketin adı ("Ulak Haberleşme") açıkça geçmiyorsa, sadece "ulak" \
+kelimesi geçiyor diye bunu şirketle ilgili, acil veya kriz niteliğinde bir konu gibi sunma — bunun \
+yerine haberin şirketle gerçekten ilgisiz olduğunu açıkça belirt ve "acil konu" listesine ekleme.
+
 ÖNEMLİ — kaynak atfı: Aşağıdaki haber listesindeki her haberin başında bir numara var \
 (ör. "3. [OLUMLU] ..."). Özette belirli bir habere/gelişmeye değindiğinde, cümlenin sonuna \
 o haberin numarasını köşeli parantez içinde ekle (ör: "...yeni anlaşma imzalandı [3]."). \
