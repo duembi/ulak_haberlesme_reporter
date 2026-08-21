@@ -953,7 +953,10 @@ def rapor_olustur(haberler: list[Haber], yonetici_ozeti: str,
     bitis     = datetime.now()
     baslangic = bitis - timedelta(days=7)
 
-    dosya_adi = f"Ulak_Haberlesme_Rapor_{bitis.strftime('%Y_%m_%d')}.pdf"
+    # Saat/dakika/saniye de dosya adına dahil — aynı gün birden fazla rapor
+    # üretilirse birbirinin dosyasının üzerine yazmasın (önceki bug: iki rapor
+    # aynı tarihli dosya adını paylaşınca ikincisi birincisini siliyordu).
+    dosya_adi = f"Ulak_Haberlesme_Rapor_{bitis.strftime('%Y_%m_%d_%H%M%S')}.pdf"
     cikti_yolu = REPORT_OUTPUT_DIR / dosya_adi
 
     doc = SimpleDocTemplate(

@@ -79,40 +79,55 @@ def _rss_url(sorgu: str, dil: str = "tr") -> str:
 
 def rakip_haberleri_cek(gun: int = 30, haber_basi: int = 3,
                         filtre: list[str] | None = None) -> dict[str, list[RakipHaber]]:
-    """Her rakip için RSS'ten haber çeker. {firma_adi: [RakipHaber]} döner."""
+    """
+    Her rakip için RSS'ten haber çeker. {firma_adi: [RakipHaber]} döner.
+
+    Hem Türkçe hem İngilizce Google News baskısı taranır (firma.rss_dil'den
+    bağımsız) — yurt dışında yapılan haberler de dahil edilsin diye. Aynı
+    haber iki dilde de çıkarsa URL'ye göre tekilleştirilir.
+    """
     esik = datetime.now() - timedelta(days=gun)
     sonuc: dict[str, list[RakipHaber]] = {}
     liste = rakipleri_yukle(filtre)
 
     for firma in liste:
         haberler: list[RakipHaber] = []
-        try:
-            feed = feedparser.parse(_rss_url(firma.rss_sorgu, firma.rss_dil))
-            for entry in feed.entries:
-                try:
-                    tarih = datetime(*entry.published_parsed[:6])
-                except Exception:
-                    tarih = None
+        goruldu_url: set[str] = set()
 
-                if tarih and tarih < esik:
-                    continue
+        for dil in ("tr", "en"):
+            if len(haberler) >= haber_basi:
+                break
+            try:
+                feed = feedparser.parse(_rss_url(firma.rss_sorgu, dil))
+                for entry in feed.entries:
+                    url = entry.get("link", "")
+                    if not url or url in goruldu_url:
+                        continue
 
-                haberler.append(RakipHaber(
-                    firma_adi=firma.ad,
-                    baslik=entry.get("title", "").strip(),
-                    url=entry.get("link", ""),
-                    kaynak=entry.get("source", {}).get("title", "Google News") if hasattr(entry, "source") else "Google News",
-                    tarih=tarih,
-                    ozet=entry.get("summary", "")[:400],
-                ))
+                    try:
+                        tarih = datetime(*entry.published_parsed[:6])
+                    except Exception:
+                        tarih = None
 
-                if len(haberler) >= haber_basi:
-                    break
+                    if tarih and tarih < esik:
+                        continue
 
-            logger.info(f"Rakip haber — {firma.ad}: {len(haberler)} haber")
-        except Exception as e:
-            logger.error(f"Rakip haber hatası ({firma.ad}): {e}")
+                    goruldu_url.add(url)
+                    haberler.append(RakipHaber(
+                        firma_adi=firma.ad,
+                        baslik=entry.get("title", "").strip(),
+                        url=url,
+                        kaynak=entry.get("source", {}).get("title", "Google News") if hasattr(entry, "source") else "Google News",
+                        tarih=tarih,
+                        ozet=entry.get("summary", "")[:400],
+                    ))
 
+                    if len(haberler) >= haber_basi:
+                        break
+            except Exception as e:
+                logger.error(f"Rakip haber hatası ({firma.ad}, {dil}): {e}")
+
+        logger.info(f"Rakip haber — {firma.ad}: {len(haberler)} haber")
         sonuc[firma.ad] = haberler
 
     return sonuc
