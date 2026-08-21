@@ -98,13 +98,13 @@ function UlakKarti() {
   });
 
   return (
-    <div className="card p-6">
+    <div className="card p-6" style={{ borderTop: "3px solid #5CCAE8" }}>
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
           <img src="/logo.svg" alt="" className="w-full h-full object-contain p-1" />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-slate-900">ULAK</h2>
+          <h2 className="text-base font-semibold" style={{ color: "#0B8FB0" }}>ULAK</h2>
           <p className="text-xs text-slate-400">Dönem seçin, o dönemin haberlerini görün</p>
         </div>
       </div>
