@@ -71,9 +71,9 @@ def _kumelere_ata(embeddingler, esik: float) -> list[int]:
 def _temsilci_sec(grup: list[Haber]) -> Haber:
     """
     Kümeden en iyi temsilciyi seçer:
-    önce AA kaynağı, sonra NewsAPI, sonra ilk haber.
+    önce AA kaynağı, sonra ilk haber.
     """
-    for kaynak_oncelik in ["Anadolu Ajansı", "NewsAPI"]:
+    for kaynak_oncelik in ["Anadolu Ajansı"]:
         for h in grup:
             if h.kaynak == kaynak_oncelik:
                 return h

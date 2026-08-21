@@ -396,8 +396,7 @@ def _istatistik_paneli(ic, s, haberler):
     # — Dil ve kaynak pasta grafikleri yan yana
     dil_sayim  = Counter(h.dil for h in haberler)
     kaynak_sayim = Counter(
-        "Google News" if "RSS" in h.kaynak
-        else ("NewsAPI" if h.kaynak == "NewsAPI" else "Web")
+        "Google News" if "RSS" in h.kaynak else "Web"
         for h in haberler
     )
 

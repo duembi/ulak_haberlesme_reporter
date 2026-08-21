@@ -11,7 +11,7 @@ Ulak Haberleşme'ye özelleştirilmiş bağımsız bir kopyasıdır.
 ```
 Turksat-Rapor/
 ├── src/
-│   ├── news_fetcher.py        Google News RSS + NewsAPI haber çekme
+│   ├── news_fetcher.py        Google News RSS haber çekme
 │   ├── crawler_agent.py       DuckDuckGo web tarama ajanı
 │   ├── press_scraper.py       Resmi basın odası scraper (Ulak Haberleşme için şu an devre dışı)
 │   ├── analyzer.py            Claude CLI batch analizi (sentiment · kategori · triple)
@@ -101,7 +101,6 @@ ai_ozet, sentiment, kategori, triples         # Analyzer tarafından doldurulur
 ## Ortam Değişkenleri
 | Değişken | Zorunlu | Açıklama |
 |---|---|---|
-| `NEWS_API_KEY` | Evet | NewsAPI erişimi |
 | `CLAUDE_TIMEOUT` | Hayır | Claude CLI zaman aşımı sn (varsayılan: 120) |
 | `REPORT_OUTPUT_DIR` | Hayır | Çıktı klasörü (varsayılan: `reports/`) |
 | `LOG_DIR` | Hayır | Log klasörü (varsayılan: `logs/`) |

@@ -39,9 +39,9 @@ def rapor_uret(gun: int = 7, rakip_filtre: str | None = None, tenant_id: int = 1
     try:
         init_db()
 
-        # 1. Haber çekme — RSS/NewsAPI + Web crawl
+        # 1. Haber çekme — RSS + Web crawl
         adim = "haber çekme"
-        logger.info("1/7 — Haberler çekiliyor (RSS + NewsAPI + Web + Resmi Site)...")
+        logger.info("1/7 — Haberler çekiliyor (RSS + Web + Resmi Site)...")
         haberler       = haberleri_cek()
         web_haberler   = web_haberleri_cek(gun=7)
         press_haberler = press_haberleri_cek(gun=7)

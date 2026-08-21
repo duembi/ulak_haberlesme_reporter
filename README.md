@@ -15,7 +15,7 @@ Kurumunuzla ilgili Türkçe ve İngilizce haberleri otomatik olarak toplar, yapa
 
 ### Özellikler
 
-- **Haber Toplama** — Google News RSS, NewsAPI, DuckDuckGo, basın odası scraping
+- **Haber Toplama** — Google News RSS, DuckDuckGo, basın odası scraping
 - **AI Analizi** — Sentiment analizi, kategori sınıflandırma, varlık ilişki tripleti çıkarma
 - **Rakip Takibi** — Rakip haberleri + borsa verisi (yfinance)
 - **LinkedIn Takibi** — Kamuya açık LinkedIn gönderileri
@@ -30,8 +30,8 @@ Kurumunuzla ilgili Türkçe ve İngilizce haberleri otomatik olarak toplar, yapa
 
 ```bash
 # 1. Repoyu klonla
-git clone https://github.com/duembi/Medya-Istihbarat-.git
-cd Medya-Istihbarat-
+git clone https://github.com/duembi/ulak_haberlesme_reporter.git
+cd ulak_haberlesme_reporter
 
 # 2. Sanal ortam oluştur
 python -m venv .venv
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 # 4. Ortam değişkenlerini ayarla
 copy .env.example .env
-# .env dosyasını düzenle (NEWS_API_KEY zorunlu, diğerleri isteğe bağlı)
+# .env dosyasını düzenle (tüm değişkenler isteğe bağlı, gerekenleri doldurun)
 
 # 5. Frontend bağımlılıkları
 cd frontend
@@ -72,7 +72,6 @@ python main.py
 
 | Değişken | Zorunlu | Açıklama |
 |---|:---:|---|
-| `NEWS_API_KEY` | ✅ | [newsapi.org](https://newsapi.org/register) ücretsiz key |
 | `JWT_SECRET_KEY` | ✅ | Üretim için en az 32 karakter rastgele string |
 | `AI_BACKEND` | — | `gemini` (varsayılan) veya `claude` |
 | `GEMINI_API_KEY` | — | [Google AI Studio](https://aistudio.google.com/app/apikey) ücretsiz key |
@@ -100,7 +99,7 @@ An automated media monitoring platform that collects Turkish and English news ab
 
 ### Features
 
-- **News Collection** — Google News RSS, NewsAPI, DuckDuckGo, press room scraping
+- **News Collection** — Google News RSS, DuckDuckGo, press room scraping
 - **AI Analysis** — Sentiment analysis, category classification, entity relationship triple extraction
 - **Competitor Tracking** — Competitor news + stock data (yfinance)
 - **LinkedIn Monitoring** — Public LinkedIn post tracking
@@ -115,8 +114,8 @@ An automated media monitoring platform that collects Turkish and English news ab
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/duembi/Medya-Istihbarat-.git
-cd Medya-Istihbarat-
+git clone https://github.com/duembi/ulak_haberlesme_reporter.git
+cd ulak_haberlesme_reporter
 
 # 2. Create virtual environment
 python -m venv .venv
@@ -129,7 +128,7 @@ pip install -r requirements.txt
 # 4. Configure environment
 copy .env.example .env        # Windows
 # cp .env.example .env        # Linux/macOS
-# Edit .env (NEWS_API_KEY required, others optional)
+# Edit .env (all variables optional, fill in what you need)
 
 # 5. Frontend dependencies
 cd frontend
@@ -158,7 +157,6 @@ python main.py
 
 | Variable | Required | Description |
 |---|:---:|---|
-| `NEWS_API_KEY` | ✅ | [newsapi.org](https://newsapi.org/register) free key |
 | `JWT_SECRET_KEY` | ✅ | At least 32 random characters for production |
 | `AI_BACKEND` | — | `gemini` (default) or `claude` |
 | `GEMINI_API_KEY` | — | [Google AI Studio](https://aistudio.google.com/app/apikey) free key |

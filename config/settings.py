@@ -6,8 +6,6 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
-
 # ── Auth & Multi-Tenant ───────────────────────────────────────────────────────
 JWT_SECRET_KEY  = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_in_production_min_32_chars!!")
 JWT_ALGORITHM   = "HS256"
@@ -45,7 +43,7 @@ EMAIL_TO       = [a.strip() for a in os.getenv("EMAIL_TO", "").split(",") if a.s
 SEARCH_KEYWORDS_TR = ["Ulak Haberleşme", "ULAK Haberleşme A.Ş."]
 SEARCH_KEYWORDS_EN = ["Ulak Haberlesme", "Ulak Communications Turkey"]
 
-# Kategori bazlı arama sorguları — NewsAPI ve DuckDuckGo'da kullanılır
+# Kategori bazlı arama sorguları — DuckDuckGo'da kullanılır
 # Her kategori ayrı bir API çağrısı olarak çalışır; bağlamsal kelimeler
 # yanlış pozitif almamak için "Ulak Haberleşme" öneki ile birleştirilir.
 ARAMA_KATEGORILERI = {

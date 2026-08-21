@@ -1,6 +1,6 @@
 """
 Müşteri sesi toplama modülü.
-Şikayetvar, Şikayet.com, Ekşi Sözlük, Reddit ve Google Play'den
+Şikayetvar (şu an devre dışı — sayfa doğrulanamadı), Ekşi Sözlük ve Reddit'ten
 Ulak Haberleşme hakkında müşteri yorumlarını çeker ve Claude ile analiz eder.
 """
 from __future__ import annotations
@@ -16,12 +16,6 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
-
-try:
-    import trafilatura
-    _TRAFILATURA_VAR = True
-except ImportError:
-    _TRAFILATURA_VAR = False
 
 from config.settings import BASE_DIR
 from src.ai_client import sorgula
@@ -121,75 +115,6 @@ def _sikayetvar_cek(gun: int = 7) -> list[MusteriYorumu]:
         logger.info(f"Şikayetvar: {len(yorumlar)} yorum çekildi")
     except Exception as e:
         logger.error(f"Şikayetvar hatası: {e}")
-    return yorumlar
-
-
-def _sikayet_com_cek(gun: int = 7) -> list[MusteriYorumu]:
-    """
-    Şikayet.com JavaScript render ettiğinden DuckDuckGo ile arama yapılır,
-    bulunan URL'lerden trafilatura ile içerik çekilir.
-    """
-    try:
-        from ddgs import DDGS
-    except ImportError:
-        from duckduckgo_search import DDGS
-
-    yorumlar: list[MusteriYorumu] = []
-    goruldu: set[str] = set()
-
-    sorgular = [
-        'site:sikayet.com "ulak haberleşme" OR "ulak haberlesme"',
-        'site:sikayet.com ulak haberleşme şikayet',
-    ]
-
-    try:
-        with DDGS() as ddgs:
-            for sorgu in sorgular:
-                time.sleep(2)
-                try:
-                    for r in ddgs.text(sorgu, max_results=15, timelimit="w"):
-                        url = r.get("href", "") or r.get("url", "")
-                        if not url or "sikayet.com" not in url:
-                            continue
-                        if url in goruldu:
-                            continue
-                        goruldu.add(url)
-
-                        baslik = r.get("title", "")
-                        icerik = r.get("body", "") or r.get("snippet", "")
-
-                        # Trafilatura ile tam içerik çekmeyi dene
-                        if _TRAFILATURA_VAR:
-                            try:
-                                downloaded = trafilatura.fetch_url(url)
-                                if downloaded:
-                                    tam = trafilatura.extract(
-                                        downloaded,
-                                        include_comments=False,
-                                        include_tables=False,
-                                    )
-                                    if tam and len(tam) > len(icerik):
-                                        icerik = tam[:600]
-                            except Exception:
-                                pass
-
-                        if not baslik or len(baslik) < 8:
-                            continue
-
-                        yorumlar.append(MusteriYorumu(
-                            platform="Şikayet.com",
-                            baslik=baslik[:200],
-                            icerik=icerik[:600],
-                            tarih=None,
-                            url=url,
-                        ))
-                except Exception as e:
-                    logger.debug(f"Şikayet.com DDG sorgu hatası: {e}")
-
-    except Exception as e:
-        logger.error(f"Şikayet.com DDG hatası: {e}")
-
-    logger.info(f"Şikayet.com: {len(yorumlar)} yorum çekildi")
     return yorumlar
 
 
@@ -297,39 +222,6 @@ def _reddit_cek(gun: int = 7) -> list[MusteriYorumu]:
     return yorumlar
 
 
-def _google_play_cek() -> list[MusteriYorumu]:
-    """Ulak Haberleşme uygulaması Google Play yorumları."""
-    yorumlar: list[MusteriYorumu] = []
-    # Ulak Haberleşme'nin resmi uygulaması doğrulanmadı — bilinen bir app id yok,
-    # şimdilik boş liste; gerçek app id bulununca buraya eklenmeli.
-    app_idler: list[str] = []
-    for app_id in app_idler:
-        url = f"https://play.google.com/store/apps/details?id={app_id}&hl=tr"
-        try:
-            resp = requests.get(url, headers=_HEADERS, timeout=15)
-            if resp.status_code != 200:
-                continue
-            soup = BeautifulSoup(resp.text, "lxml")
-
-            yorumlar_el = soup.select("div[jscontroller] span[jsname]")
-            for el in yorumlar_el[:20]:
-                metin = el.get_text(strip=True)
-                if len(metin) < 20:
-                    continue
-                yorumlar.append(MusteriYorumu(
-                    platform="Google Play",
-                    baslik="Uygulama yorumu",
-                    icerik=metin[:600],
-                    tarih=None,
-                    url=url,
-                ))
-        except Exception as e:
-            logger.debug(f"Google Play ({app_id}): {e}")
-
-    logger.info(f"Google Play: {len(yorumlar)} yorum çekildi")
-    return yorumlar
-
-
 # ── Claude ile analiz ────────────────────────────────────────────────────────
 
 _ANALIZ_PROMPTU = """\
@@ -432,10 +324,8 @@ def musteri_sesi_topla(gun: int = 7) -> MusteriSesiRaporu:
     tum_yorumlar: list[MusteriYorumu] = []
 
     tum_yorumlar += _sikayetvar_cek(gun)
-    tum_yorumlar += _sikayet_com_cek(gun)
     tum_yorumlar += _eksisozluk_cek(gun)
     tum_yorumlar += _reddit_cek(gun)
-    tum_yorumlar += _google_play_cek()
 
     logger.info(f"Toplam müşteri yorumu: {len(tum_yorumlar)}")
 

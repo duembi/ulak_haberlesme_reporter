@@ -2,20 +2,14 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from typing import Optional
 import feedparser
-import requests
 from loguru import logger
 
-from src.retry import retry
 from config.settings import (
-    NEWS_API_KEY,
     GOOGLE_NEWS_RSS_TR,
     GOOGLE_NEWS_RSS_EN,
     AA_RSS_TR,
     AA_RSS_EN,
-    SEARCH_KEYWORDS_TR,
-    SEARCH_KEYWORDS_EN,
     NEWS_API_LOOKBACK_DAYS,
-    ARAMA_KATEGORILERI,
 )
 
 
@@ -60,56 +54,6 @@ def _google_news_rss_cek(url: str, dil: str) -> list[Haber]:
     return haberler
 
 
-@retry(max_deneme=3, bekleme=3.0, istisnalar=(Exception,))
-def _newsapi_cek(kelimeler: list[str], dil: str) -> list[Haber]:
-    if not NEWS_API_KEY:
-        logger.warning("NEWS_API_KEY tanımlı değil, NewsAPI atlanıyor")
-        return []
-
-    haberler = []
-    baslangic = (datetime.now() - timedelta(days=NEWS_API_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-    sorgu = " OR ".join(kelimeler)
-
-    try:
-        resp = requests.get(
-            "https://newsapi.org/v2/everything",
-            params={
-                "q": sorgu,
-                "from": baslangic,
-                "language": dil,
-                "sortBy": "publishedAt",
-                "pageSize": 50,
-            },
-            headers={"X-Api-Key": NEWS_API_KEY},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        veri = resp.json()
-
-        for makale in veri.get("articles", []):
-            tarih = None
-            if makale.get("publishedAt"):
-                try:
-                    tarih = datetime.fromisoformat(makale["publishedAt"].replace("Z", "+00:00"))
-                except Exception:
-                    pass
-
-            haberler.append(Haber(
-                baslik=makale.get("title") or "",
-                ozet=makale.get("description") or "",
-                url=makale.get("url") or "",
-                kaynak=makale.get("source", {}).get("name") or "NewsAPI",
-                tarih=tarih.replace(tzinfo=None) if tarih else None,
-                dil=dil,
-            ))
-
-        logger.info(f"NewsAPI ({dil}): {len(haberler)} haber alındı")
-    except Exception as e:
-        logger.error(f"NewsAPI ({dil}) hatası: {e}")
-
-    return haberler
-
-
 def _tekilestir(haberler: list[Haber]) -> list[Haber]:
     """URL'ye göre tekrar eden haberleri kaldırır."""
     goruldu = set()
@@ -133,18 +77,6 @@ def _aa_rss_cek() -> list[Haber]:
     return haberler
 
 
-def _newsapi_kategori_cek() -> list[Haber]:
-    """Her kategori için ayrı NewsAPI sorgusu çalıştırır."""
-    haberler: list[Haber] = []
-    for kategori, diller in ARAMA_KATEGORILERI.items():
-        for dil, kelimeler in diller.items():
-            yeni = _newsapi_cek(kelimeler, dil)
-            for h in yeni:
-                h.kategori = kategori  # ön etiket — analyzer üzerine yazar
-            haberler += yeni
-    return haberler
-
-
 _ALAKA_KELIMELER = {
     "ulak haberleşme", "ulak haberlesme", "ulak 5g", "ulak mobil haberleşme",
     "ulak yazılım tabanlı telsiz", "ulak çekirdek şebeke", "ulak baz istasyonu",
@@ -164,9 +96,6 @@ def haberleri_cek() -> list[Haber]:
     tum_haberler += _google_news_rss_cek(GOOGLE_NEWS_RSS_TR, "tr")
     tum_haberler += _google_news_rss_cek(GOOGLE_NEWS_RSS_EN, "en")
     tum_haberler += _aa_rss_cek()
-    tum_haberler += _newsapi_cek(SEARCH_KEYWORDS_TR, "tr")
-    tum_haberler += _newsapi_cek(SEARCH_KEYWORDS_EN, "en")
-    tum_haberler += _newsapi_kategori_cek()
 
     tum_haberler = _tekilestir(tum_haberler)
 
