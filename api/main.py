@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.deps import get_current_user
@@ -9,7 +9,7 @@ from api.routers import (
 from api.routers import llm_configs, tenant_competitors, report_jobs
 from api.schemas import IstatistikYanit
 from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al
-from src.competitor_tracker import rakip_kart_sayilari
+from src.competitor_tracker import rakip_kart_sayilari, rakip_kart_haberleri, DASHBOARD_FIRMALARI
 
 app = FastAPI(
     title="Medya İstihbarat API",
@@ -80,6 +80,14 @@ def stats_rakip_kartlari(user: dict = Depends(get_current_user)):
     bilerek `def` (async değil) tanımlandı — FastAPI otomatik thread pool'a atar.
     """
     return rakip_kart_sayilari()
+
+
+@app.get("/api/stats/rakip-haberler", tags=["Stats"])
+def stats_rakip_haberleri(firma: str, gun: int = 7, user: dict = Depends(get_current_user)):
+    """Dashboard'daki sabit bir firma kartı için belirtilen dönemdeki haberler."""
+    if firma not in DASHBOARD_FIRMALARI:
+        raise HTTPException(404, detail="Bilinmeyen firma")
+    return rakip_kart_haberleri(firma, gun)
 
 
 @app.get("/api/health", tags=["Health"])

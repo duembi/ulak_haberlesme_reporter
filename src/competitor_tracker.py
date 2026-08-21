@@ -136,35 +136,72 @@ _DASHBOARD_CACHE_SN = 600  # 10 dakika — her dashboard yüklemesinde 4 RSS ist
 _dashboard_cache: dict = {"zaman": None, "veri": None}
 
 
-def rakip_kart_sayilari() -> dict[str, dict[int, int]]:
-    """Her sabit dashboard firması için {gün: haber_sayısı} döner (1/7/30 gün)."""
+def _dashboard_veri_al() -> dict[str, list[dict]]:
+    """
+    Her sabit dashboard firması için RSS'ten (baslik, url, kaynak, tarih) haber
+    listesi çeker ve önbelleğe alır. Hem sayım hem de haber listesi popup'ı
+    aynı önbellekten beslenir.
+    """
     simdi = datetime.now()
 
     onbellek_zaman = _dashboard_cache["zaman"]
     if onbellek_zaman and (simdi - onbellek_zaman).total_seconds() < _DASHBOARD_CACHE_SN:
         return _dashboard_cache["veri"]
 
-    sonuc: dict[str, dict[int, int]] = {}
+    veri: dict[str, list[dict]] = {}
 
     for ad, sorgu in DASHBOARD_FIRMALARI.items():
-        tarihler: list[datetime] = []
+        haberler: list[dict] = []
         try:
             feed = feedparser.parse(_rss_url(sorgu, "tr"))
             for entry in feed.entries:
                 try:
-                    tarihler.append(datetime(*entry.published_parsed[:6]))
+                    tarih = datetime(*entry.published_parsed[:6])
                 except Exception:
-                    pass
+                    tarih = None
+                haberler.append({
+                    "baslik": entry.get("title", "").strip(),
+                    "url": entry.get("link", ""),
+                    "kaynak": (entry.get("source", {}).get("title") if hasattr(entry, "source") else None) or "Google News",
+                    "tarih": tarih.isoformat() if tarih else None,
+                })
         except Exception as e:
-            logger.error(f"Dashboard rakip sayı hatası ({ad}): {e}")
+            logger.error(f"Dashboard rakip veri hatası ({ad}): {e}")
 
+        veri[ad] = haberler
+
+    _dashboard_cache["zaman"] = simdi
+    _dashboard_cache["veri"] = veri
+    return veri
+
+
+def rakip_kart_sayilari() -> dict[str, dict[int, int]]:
+    """Her sabit dashboard firması için {gün: haber_sayısı} döner (1/7/30 gün)."""
+    simdi = datetime.now()
+    veri = _dashboard_veri_al()
+    sonuc: dict[str, dict[int, int]] = {}
+
+    for ad, haberler in veri.items():
+        tarihler = [datetime.fromisoformat(h["tarih"]) for h in haberler if h["tarih"]]
         sonuc[ad] = {
             gun: sum(1 for t in tarihler if t >= simdi - timedelta(days=gun))
             for gun in _DASHBOARD_DONEMLER
         }
 
-    _dashboard_cache["zaman"] = simdi
-    _dashboard_cache["veri"] = sonuc
+    return sonuc
+
+
+def rakip_kart_haberleri(firma: str, gun: int) -> list[dict]:
+    """Bir dashboard firması için belirtilen dönemdeki haberleri, en yeniden eskiye, döner."""
+    esik = datetime.now() - timedelta(days=gun)
+    veri = _dashboard_veri_al()
+    haberler = veri.get(firma, [])
+
+    sonuc = [
+        h for h in haberler
+        if h["tarih"] and datetime.fromisoformat(h["tarih"]) >= esik
+    ]
+    sonuc.sort(key=lambda h: h["tarih"], reverse=True)
     return sonuc
 
 

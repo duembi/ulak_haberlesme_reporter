@@ -123,6 +123,13 @@ export interface HaberOzet {
   kategori: string | null;
 }
 
+export interface RakipKartHaberi {
+  baslik: string;
+  url: string;
+  kaynak: string;
+  tarih: string | null;
+}
+
 export interface Rakip {
   ad: string;
   bolge: string;
@@ -257,10 +264,11 @@ export const reportJobApi = {
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 export const statsApi = {
-  al:          ()              => http.get<Istatistik>("/stats").then(r => r.data),
-  timeline:    (gun: number)   => http.get<TimelineVeri[]>("/stats/timeline", { params: { gun } }).then(r => r.data),
-  haberler:    (gun: number)   => http.get<HaberOzet[]>("/stats/news", { params: { gun } }).then(r => r.data),
-  rakipKartlar:()              => http.get<Record<string, Record<string, number>>>("/stats/rakip-kartlar").then(r => r.data),
+  al:           ()                             => http.get<Istatistik>("/stats").then(r => r.data),
+  timeline:     (gun: number)                  => http.get<TimelineVeri[]>("/stats/timeline", { params: { gun } }).then(r => r.data),
+  haberler:     (gun: number)                  => http.get<HaberOzet[]>("/stats/news", { params: { gun } }).then(r => r.data),
+  rakipKartlar: ()                             => http.get<Record<string, Record<string, number>>>("/stats/rakip-kartlar").then(r => r.data),
+  rakipHaberler:(firma: string, gun: number)   => http.get<RakipKartHaberi[]>("/stats/rakip-haberler", { params: { firma, gun } }).then(r => r.data),
 };
 
 // ── Settings ─────────────────────────────────────────────────────────────────
