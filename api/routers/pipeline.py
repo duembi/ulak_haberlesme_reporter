@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from api.deps import get_current_user
-from api.schemas import PipelineIstek, PipelineDurumu, RakipYanit
+from api.schemas import PipelineIstek, PipelineDurumu
 
 router = APIRouter()
 
@@ -21,23 +21,6 @@ _state: dict = {
 _PROJE_KOKU = Path(__file__).resolve().parent.parent.parent
 
 
-def _rakip_kategorisi(ad: str) -> str:
-    uydu = {"Eutelsat", "SES", "Arabsat", "Intelsat", "Starlink"}
-    turk_telekom = {"Turkcell", "Türk Telekom"}
-    turk_uzay = {"TUSAŞ", "SDT Uzay", "TUA", "PLANS"}
-    ajanslar = {"NASA", "ESA", "JAXA", "ISRO", "CNSA", "Roscosmos",
-                "UK Space Agency", "CSA", "UAE Space Agency"}
-    if ad in uydu:
-        return "Uydu Operatörleri"
-    if ad in turk_telekom:
-        return "Türk Telekom"
-    if ad in turk_uzay:
-        return "Türk Uzay Sanayii"
-    if ad in ajanslar:
-        return "Uzay Ajansları"
-    return "Global Uzay Firmaları"
-
-
 async def _pipeline_calistir(istek: PipelineIstek):
     _state["calisiyor"] = True
     _state["baslangic_zamani"] = datetime.now().isoformat()
@@ -46,8 +29,6 @@ async def _pipeline_calistir(istek: PipelineIstek):
     _state["hata"] = None
 
     cmd = [sys.executable, str(_PROJE_KOKU / "main.py"), "--gun", str(istek.gun)]
-    if istek.rakipler:
-        cmd += ["--rakipler", ",".join(istek.rakipler)]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -82,19 +63,3 @@ async def pipeline_baslat(istek: PipelineIstek, background_tasks: BackgroundTask
         raise HTTPException(409, detail="Pipeline zaten çalışıyor")
     background_tasks.add_task(_pipeline_calistir, istek)
     return {"mesaj": "Pipeline başlatıldı", "gun": istek.gun}
-
-
-@router.get("/competitors", response_model=list[RakipYanit])
-async def rakipleri_listele(user: dict = Depends(get_current_user)):
-    from src.database import rakip_listesi_al
-    rows = rakip_listesi_al(sadece_aktif=True)
-    return [
-        {
-            "ad": r["ad"],
-            "bolge": r["bolge"],
-            "aciklama": r["aciklama"],
-            "ticker": r["ticker"],
-            "kategori": _rakip_kategorisi(r["ad"]),
-        }
-        for r in rows
-    ]

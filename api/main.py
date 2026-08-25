@@ -2,11 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.deps import get_current_user
-from api.routers import (
-    auth, mail, reports, pipeline, settings,
-    linkedin, competitors,
-)
-from api.routers import llm_configs, tenant_competitors, report_jobs
+from api.routers import auth, pipeline, competitors, tenant_competitors, yonetim
 from api.schemas import IstatistikYanit
 from src.database import init_db, istatistik_al, haber_seri_al, haberler_donem_al, haber_sayilari_donem_al
 from src.competitor_tracker import rakip_kart_sayilari, rakip_kart_haberleri, DASHBOARD_FIRMALARI
@@ -42,15 +38,10 @@ async def startup():
 app.include_router(auth.router,               prefix="/api/auth",              tags=["Auth"])
 
 # ── Protected ─────────────────────────────────────────────────────────────────
-app.include_router(mail.router,               prefix="/api/mail",              tags=["Mail"])
-app.include_router(reports.router,            prefix="/api/reports",           tags=["Raporlar"])
 app.include_router(pipeline.router,           prefix="/api/pipeline",          tags=["Pipeline"])
-app.include_router(settings.router,           prefix="/api/settings",          tags=["Ayarlar"])
-app.include_router(linkedin.router,           prefix="/api/linkedin",          tags=["LinkedIn"])
 app.include_router(competitors.router,        prefix="/api/competitors",       tags=["Rakipler"])
-app.include_router(llm_configs.router,        prefix="/api/llm-configs",       tags=["LLM Configs"])
 app.include_router(tenant_competitors.router, prefix="/api/tenant-competitors",tags=["Tenant Rakipleri"])
-app.include_router(report_jobs.router,        prefix="/api/report-jobs",       tags=["Rapor İşleri"])
+app.include_router(yonetim.router,            prefix="/api/yonetim",           tags=["Yönetim"])
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -94,6 +85,19 @@ def stats_rakip_haberleri(firma: str, gun: int = 7, user: dict = Depends(get_cur
     if firma not in DASHBOARD_FIRMALARI:
         raise HTTPException(404, detail="Bilinmeyen firma")
     return rakip_kart_haberleri(firma, gun)
+
+
+@app.get("/api/stats/linkedin", tags=["Stats"])
+async def stats_linkedin(firma: str, gun: int = 30, user: dict = Depends(get_current_user)):
+    """
+    Dashboard'daki bir firma kartı (ULAK dahil) için LinkedIn paylaşımlarını getirir.
+    Firmanın seçili LinkedIn tag'i yoksa LLM ile otomatik üretilir.
+    """
+    if firma != "ULAK" and firma not in DASHBOARD_FIRMALARI:
+        raise HTTPException(404, detail="Bilinmeyen firma")
+    ad_gorunen = "Ulak Haberleşme" if firma == "ULAK" else DASHBOARD_FIRMALARI[firma]
+    from src.linkedin_tracker import firma_linkedin_tagleri_ve_gonderileri
+    return await firma_linkedin_tagleri_ve_gonderileri(user["tenant_id"], firma, ad_gorunen, gun=gun)
 
 
 @app.get("/api/health", tags=["Health"])

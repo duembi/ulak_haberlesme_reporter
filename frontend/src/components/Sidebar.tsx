@@ -1,27 +1,17 @@
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, FileText,
-  Settings, LogOut, ChevronDown, Cpu, Building2, Mail, Network,
+  LayoutDashboard,
+  LogOut, ChevronDown, Building2, Users,
   Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 
-const AYARLAR_ALT = [
-  { tab: "llm",      icon: Cpu,       label: "LLM Konfigürasyonu" },
-  { tab: "rakip",    icon: Building2, label: "Rakip Firmalar"      },
-  { tab: "mail",     icon: Mail,      label: "Mail Listesi"        },
-  { tab: "linkedin", icon: Network,   label: "LinkedIn Takip"      },
-];
-
 export default function Sidebar() {
   const { user, logout, isDark, toggleDark } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [userMenuAcik, setUserMenuAcik] = useState(false);
-
-  const ayarlardaMi = location.pathname === "/ayarlar";
 
   const handleLogout = () => {
     logout();
@@ -56,47 +46,23 @@ export default function Sidebar() {
           <LayoutDashboard size={17} /> Dashboard
         </NavLink>
 
-        {/* Raporlar */}
-        <NavLink to="/raporlar"
+        {/* Yönetim Kurulu */}
+        <NavLink to="/yonetim-kurulu"
           className={({ isActive }) => cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
             isActive ? "bg-brand-600 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
           )}>
-          <FileText size={17} /> Raporlar
+          <Users size={17} /> Yönetim Kurulu
         </NavLink>
 
-        {/* Ayarlar + alt menü */}
-        <NavLink to="/ayarlar"
+        {/* Rakip Firmalar */}
+        <NavLink to="/rakip-firmalar"
           className={({ isActive }) => cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
             isActive ? "bg-brand-600 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
           )}>
-          <Settings size={17} /> Ayarlar
+          <Building2 size={17} /> Rakip Firmalar
         </NavLink>
-
-        {ayarlardaMi && (
-          <div className="ml-3 pl-3 border-l border-white/10 space-y-0.5 mt-0.5">
-            {AYARLAR_ALT.map(({ tab, icon: Icon, label }) => {
-              const aktif = location.search === `?tab=${tab}` ||
-                (tab === "llm" && !location.search);
-              return (
-                <button
-                  key={tab}
-                  onClick={() => navigate(`/ayarlar?tab=${tab}`)}
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all",
-                    aktif
-                      ? "bg-white/10 text-white"
-                      : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
-                  )}
-                >
-                  <Icon size={13} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </nav>
 
       {/* Kullanıcı menüsü */}

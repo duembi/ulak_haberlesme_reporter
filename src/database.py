@@ -161,12 +161,38 @@ def init_db():
             CREATE TABLE IF NOT EXISTS linkedin_tags (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 tenant_id      INTEGER NOT NULL REFERENCES tenants(id),
+                firma          TEXT    NOT NULL DEFAULT 'ULAK',
                 tag            TEXT    NOT NULL,
                 aciklama       TEXT    NOT NULL DEFAULT '',
                 kaynak         TEXT    NOT NULL DEFAULT 'manuel',
                 secili         INTEGER NOT NULL DEFAULT 1,
                 olusturuldu_at TEXT    DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(tenant_id, tag)
+                UNIQUE(tenant_id, firma, tag)
+            );
+
+            -- ── Yönetim Kurulu / Yönetim Takibi ────────────────────────────────
+            CREATE TABLE IF NOT EXISTS yonetim_kisi (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id      INTEGER NOT NULL DEFAULT 1,
+                ad_soyad       TEXT    NOT NULL,
+                unvan          TEXT    NOT NULL DEFAULT '',
+                grup           TEXT    NOT NULL DEFAULT 'kurul',
+                foto_url       TEXT    NOT NULL DEFAULT '',
+                linkedin_url   TEXT,
+                kaynak         TEXT    NOT NULL DEFAULT 'resmi_site',
+                aktif          INTEGER NOT NULL DEFAULT 1,
+                olusturuldu_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+                guncellendi_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(tenant_id, ad_soyad, grup)
+            );
+
+            CREATE TABLE IF NOT EXISTS yonetim_degisiklik (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL DEFAULT 1,
+                ad_soyad  TEXT    NOT NULL,
+                tur       TEXT    NOT NULL,
+                detay     TEXT    NOT NULL DEFAULT '',
+                tarih     TEXT    DEFAULT CURRENT_TIMESTAMP
             );
 
             -- ── İndeksler ────────────────────────────────────────────────────
@@ -180,6 +206,8 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_users_email         ON users(email);
             CREATE INDEX IF NOT EXISTS idx_users_tenant        ON users(tenant_id);
             CREATE INDEX IF NOT EXISTS idx_linkedin_tags_tenant ON linkedin_tags(tenant_id);
+            CREATE INDEX IF NOT EXISTS idx_yonetim_kisi_tenant ON yonetim_kisi(tenant_id);
+            CREATE INDEX IF NOT EXISTS idx_yonetim_degisiklik_tenant ON yonetim_degisiklik(tenant_id);
         """)
 
         conn.execute(
@@ -200,6 +228,9 @@ def _mevcut_tablo_migrasyonu():
         "ALTER TABLE mail_listesi ADD COLUMN tenant_id INTEGER DEFAULT 1",
         "ALTER TABLE tenants ADD COLUMN brand_colors TEXT",
         "ALTER TABLE reports ADD COLUMN ad TEXT",
+        "ALTER TABLE linkedin_tags ADD COLUMN firma TEXT DEFAULT 'ULAK'",
+        "ALTER TABLE yonetim_kisi ADD COLUMN linkedin_url TEXT",
+        "ALTER TABLE yonetim_kisi ADD COLUMN kaynak TEXT DEFAULT 'resmi_site'",
         "CREATE INDEX IF NOT EXISTS idx_news_tenant    ON news(tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_mail_tenant    ON mail_listesi(tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_reports_tenant ON reports(tenant_id)",
@@ -524,7 +555,7 @@ def haberler_donem_al(tenant_id: int, gun: int = 1, limit: int = 100) -> list[di
     with _conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, baslik, url, kaynak, tarih, sentiment, kategori
+            SELECT id, baslik, url, kaynak, tarih, kategori
             FROM news
             WHERE tarih >= ? AND tenant_id = ?
             ORDER BY tarih DESC
@@ -785,31 +816,40 @@ def rakip_sil(rakip_id: int) -> bool:
 
 # ── LinkedIn Tags CRUD ────────────────────────────────────────────────────────
 
-def linkedin_tag_listele(tenant_id: int) -> list[dict]:
+def linkedin_tag_listele(tenant_id: int, firma: str = "ULAK") -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM linkedin_tags WHERE tenant_id = ? ORDER BY kaynak, tag",
-            (tenant_id,),
+            "SELECT * FROM linkedin_tags WHERE tenant_id = ? AND firma = ? ORDER BY kaynak, tag",
+            (tenant_id, firma),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def linkedin_tag_ekle(tenant_id: int, tag: str, aciklama: str = "",
-                      kaynak: str = "manuel", secili: bool = True) -> dict | None:
+                      kaynak: str = "manuel", secili: bool = True,
+                      firma: str = "ULAK") -> dict | None:
     try:
         with _conn() as conn:
             conn.execute(
-                "INSERT INTO linkedin_tags (tenant_id, tag, aciklama, kaynak, secili) VALUES (?, ?, ?, ?, ?)",
-                (tenant_id, tag.strip(), aciklama.strip(), kaynak, int(secili)),
+                "INSERT INTO linkedin_tags (tenant_id, tag, aciklama, kaynak, secili, firma) VALUES (?, ?, ?, ?, ?, ?)",
+                (tenant_id, tag.strip(), aciklama.strip(), kaynak, int(secili), firma),
             )
         with _conn() as conn:
             row = conn.execute(
-                "SELECT * FROM linkedin_tags WHERE tenant_id = ? AND tag = ?",
-                (tenant_id, tag.strip()),
+                "SELECT * FROM linkedin_tags WHERE tenant_id = ? AND tag = ? AND firma = ?",
+                (tenant_id, tag.strip(), firma),
             ).fetchone()
         return dict(row) if row else None
     except sqlite3.IntegrityError:
         return None
+
+
+def linkedin_tag_al(tag_id: int, tenant_id: int) -> dict | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM linkedin_tags WHERE id = ? AND tenant_id = ?", (tag_id, tenant_id)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def linkedin_tag_guncelle(tag_id: int, tenant_id: int, **kwargs) -> bool:
@@ -834,18 +874,158 @@ def linkedin_tag_sil(tag_id: int, tenant_id: int) -> bool:
     return c.rowcount > 0
 
 
-def linkedin_tag_toplu_sec(tenant_id: int, secili_idler: list[int]) -> None:
-    """Verilen ID listesini seçili, geri kalanları seçilmemiş yapar."""
+def linkedin_tag_toplu_sec(tenant_id: int, secili_idler: list[int], firma: str = "ULAK") -> None:
+    """Verilen ID listesini seçili, geri kalanları seçilmemiş yapar (tek firma kapsamında)."""
     secili_set = set(secili_idler)
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT id FROM linkedin_tags WHERE tenant_id = ?", (tenant_id,)
+            "SELECT id FROM linkedin_tags WHERE tenant_id = ? AND firma = ?", (tenant_id, firma)
         ).fetchall()
         for row in rows:
             yeni = 1 if row["id"] in secili_set else 0
             conn.execute(
                 "UPDATE linkedin_tags SET secili = ? WHERE id = ?", (yeni, row["id"])
             )
+
+
+# ── Yönetim Kurulu / Yönetim ────────────────────────────────────────────────────
+
+def yonetim_listele(tenant_id: int = 1) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM yonetim_kisi WHERE tenant_id = ? AND aktif = 1 ORDER BY grup, id",
+            (tenant_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def yonetim_degisiklikleri_al(tenant_id: int = 1, limit: int = 10) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM yonetim_degisiklik WHERE tenant_id = ? ORDER BY id DESC LIMIT ?",
+            (tenant_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def yonetim_senkronize(tenant_id: int, cekilen: list) -> list[dict]:
+    """
+    Resmi siteden çekilen güncel kişi listesini DB'deki kayıtla karşılaştırır:
+    yeni kişi ekler, unvan/foto değişikliklerini günceller, artık sitede
+    olmayanları pasifleştirir. Her değişiklik yonetim_degisiklik tablosuna
+    loglanır. Güncel (aktif) listeyi döner.
+    """
+    with _conn() as conn:
+        # ust_kademe kişileri bu senkronizasyonun kapsamı dışında — resmi
+        # sitede zaten yer almıyorlar (LLM/LinkedIn keşfi veya elle eklendiler),
+        # bu yüzden karşılaştırma/pasifleştirme mantığına dahil edilmemeliler.
+        mevcutlar = {
+            (r["ad_soyad"], r["grup"]): dict(r)
+            for r in conn.execute(
+                "SELECT * FROM yonetim_kisi WHERE tenant_id = ? AND grup != 'ust_kademe'",
+                (tenant_id,),
+            ).fetchall()
+        }
+
+        gorulen_anahtarlar: set[tuple[str, str]] = set()
+
+        for kisi in cekilen:
+            anahtar = (kisi.ad_soyad, kisi.grup)
+            gorulen_anahtarlar.add(anahtar)
+            eski = mevcutlar.get(anahtar)
+
+            if eski is None:
+                conn.execute(
+                    """INSERT INTO yonetim_kisi (tenant_id, ad_soyad, unvan, grup, foto_url, aktif)
+                       VALUES (?, ?, ?, ?, ?, 1)""",
+                    (tenant_id, kisi.ad_soyad, kisi.unvan, kisi.grup, kisi.foto_url),
+                )
+                conn.execute(
+                    """INSERT INTO yonetim_degisiklik (tenant_id, ad_soyad, tur, detay)
+                       VALUES (?, ?, 'eklendi', ?)""",
+                    (tenant_id, kisi.ad_soyad, kisi.unvan),
+                )
+            else:
+                guncellemeler = {}
+                if eski["unvan"] != kisi.unvan:
+                    guncellemeler["unvan"] = kisi.unvan
+                    conn.execute(
+                        """INSERT INTO yonetim_degisiklik (tenant_id, ad_soyad, tur, detay)
+                           VALUES (?, ?, 'unvan_degisti', ?)""",
+                        (tenant_id, kisi.ad_soyad, f"{eski['unvan']} → {kisi.unvan}"),
+                    )
+                if eski["foto_url"] != kisi.foto_url:
+                    guncellemeler["foto_url"] = kisi.foto_url
+                if not eski["aktif"]:
+                    guncellemeler["aktif"] = 1
+                    conn.execute(
+                        """INSERT INTO yonetim_degisiklik (tenant_id, ad_soyad, tur, detay)
+                           VALUES (?, ?, 'eklendi', ?)""",
+                        (tenant_id, kisi.ad_soyad, kisi.unvan),
+                    )
+                if guncellemeler:
+                    guncellemeler["guncellendi_at"] = datetime.now().isoformat()
+                    set_clause = ", ".join(f"{k} = ?" for k in guncellemeler)
+                    conn.execute(
+                        f"UPDATE yonetim_kisi SET {set_clause} WHERE id = ?",
+                        (*guncellemeler.values(), eski["id"]),
+                    )
+
+        # Sitede artık görünmeyen ama DB'de aktif olan kişileri pasifleştir
+        for anahtar, eski in mevcutlar.items():
+            if anahtar not in gorulen_anahtarlar and eski["aktif"]:
+                conn.execute("UPDATE yonetim_kisi SET aktif = 0 WHERE id = ?", (eski["id"],))
+                conn.execute(
+                    """INSERT INTO yonetim_degisiklik (tenant_id, ad_soyad, tur, detay)
+                       VALUES (?, ?, 'ayrildi', ?)""",
+                    (tenant_id, eski["ad_soyad"], eski["unvan"]),
+                )
+
+    return yonetim_listele(tenant_id)
+
+
+def ust_kademe_ekle(tenant_id: int, ad_soyad: str, unvan: str, linkedin_url: str = "") -> bool:
+    """
+    LLM/LinkedIn keşfiyle bulunan üst kademe çalışanı ekler. Zaten varsa
+    (büyük/küçük harf veya boşluk farkı gözetmeksizin — LLM aynı kişiyi farklı
+    yazımla çıkarabiliyor) sessizce geçer.
+    """
+    normalize = lambda s: " ".join(s.split()).lower()
+    with _conn() as conn:
+        mevcutlar = conn.execute(
+            "SELECT ad_soyad FROM yonetim_kisi WHERE tenant_id = ? AND grup = 'ust_kademe'",
+            (tenant_id,),
+        ).fetchall()
+        if any(normalize(r["ad_soyad"]) == normalize(ad_soyad) for r in mevcutlar):
+            return False
+        try:
+            conn.execute(
+                """INSERT INTO yonetim_kisi
+                   (tenant_id, ad_soyad, unvan, grup, linkedin_url, kaynak, aktif)
+                   VALUES (?, ?, ?, 'ust_kademe', ?, 'linkedin', 1)""",
+                (tenant_id, ad_soyad, unvan, linkedin_url),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def yonetim_foto_guncelle(kisi_id: int, tenant_id: int, foto_url: str) -> bool:
+    with _conn() as conn:
+        c = conn.execute(
+            "UPDATE yonetim_kisi SET foto_url = ? WHERE id = ? AND tenant_id = ?",
+            (foto_url, kisi_id, tenant_id),
+        )
+    return c.rowcount > 0
+
+
+def ust_kademe_sil(kisi_id: int, tenant_id: int) -> bool:
+    with _conn() as conn:
+        c = conn.execute(
+            "DELETE FROM yonetim_kisi WHERE id = ? AND tenant_id = ? AND grup = 'ust_kademe'",
+            (kisi_id, tenant_id),
+        )
+    return c.rowcount > 0
 
 
 # ── Ayarlar ───────────────────────────────────────────────────────────────────
@@ -872,42 +1052,9 @@ def ayar_guncelle(anahtar: str, deger: str) -> None:
 def istatistik_al(tenant_id: int, gun: int = 7) -> dict:
     esik = (datetime.now() - timedelta(days=gun)).isoformat()
     with _conn() as conn:
-        sentiment_rows = conn.execute(
-            """
-            SELECT sentiment, COUNT(*) AS sayi
-            FROM news
-            WHERE tarih >= ? AND tenant_id = ? AND sentiment IS NOT NULL
-            GROUP BY sentiment
-            """,
-            (esik, tenant_id),
-        ).fetchall()
-        sentiment = {r["sentiment"]: r["sayi"] for r in sentiment_rows}
-
         toplam = conn.execute(
             "SELECT COUNT(*) FROM news WHERE tarih >= ? AND tenant_id = ?",
             (esik, tenant_id),
         ).fetchone()[0]
 
-        son_rapor = conn.execute(
-            "SELECT olusturuldu_at FROM reports WHERE tenant_id = ? ORDER BY id DESC LIMIT 1",
-            (tenant_id,),
-        ).fetchone()
-
-        toplam_rapor = conn.execute(
-            "SELECT COUNT(*) FROM reports WHERE tenant_id = ?", (tenant_id,)
-        ).fetchone()[0]
-
-        aktif_alici = conn.execute(
-            "SELECT COUNT(*) FROM mail_listesi WHERE aktif = 1 AND tenant_id = ?",
-            (tenant_id,),
-        ).fetchone()[0]
-
-    return {
-        "toplam_haber": toplam,
-        "olumlu": sentiment.get("olumlu", 0),
-        "olumsuz": sentiment.get("olumsuz", 0),
-        "notr": sentiment.get("nötr", 0),
-        "son_rapor_tarihi": son_rapor["olusturuldu_at"] if son_rapor else None,
-        "toplam_rapor": toplam_rapor,
-        "aktif_alici": aktif_alici,
-    }
+    return {"toplam_haber": toplam}

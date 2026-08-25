@@ -17,7 +17,6 @@ Her haber için şu yapıyı kullan:
     {{
       "indeks": 0,
       "ozet": "Türkçe 2-3 cümlelik yönetici özeti",
-      "sentiment": "olumlu | olumsuz | nötr",
       "kategori": "teknoloji | finans | şirket haberi | politika | uluslararası | diğer",
       "triples": [
         ["Kaynak Varlık", "ilişki türü", "Hedef Varlık"]
@@ -134,7 +133,6 @@ def haberleri_analiz_et(haberler: list[Haber]) -> list[Haber]:
             haber.ai_ozet = haber.ozet[:300]
         else:
             haber.ai_ozet = ""
-        haber.sentiment = sonuc.get("sentiment",  "nötr")
         haber.kategori  = sonuc.get("kategori",   "diğer")
         raw_triples = sonuc.get("triples", [])
         haber.triples   = [t for t in raw_triples if isinstance(t, list) and len(t) == 3]

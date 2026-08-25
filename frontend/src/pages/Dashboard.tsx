@@ -1,16 +1,81 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Users, X, ExternalLink } from "lucide-react";
-import { statsApi, type Istatistik, type HaberOzet, type RakipKartHaberi } from "@/lib/api";
-import { formatTarihSaat, formatTarih, cn } from "@/lib/utils";
+import { X, ExternalLink, Network } from "lucide-react";
+import { statsApi, type Istatistik, type HaberOzet, type RakipKartHaberi, type LinkedInGonderi } from "@/lib/api";
+import { formatTarih } from "@/lib/utils";
+import UlakSlider from "@/components/UlakSlider";
+
+// ── LinkedIn paylaşımları popup'ı (ULAK + rakip kartları ortak) ─────────────────
+
+function LinkedInPostlarPopup({ firma, baslik, onKapat }: { firma: string; baslik: string; onKapat: () => void }) {
+  const { data = [], isLoading, isError } = useQuery<LinkedInGonderi[]>({
+    queryKey: ["dashboard-linkedin", firma],
+    queryFn: () => statsApi.linkedin(firma),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onKapat}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <Network size={17} className="text-[#0A66C2]" /> {baslik} — LinkedIn
+            </h2>
+            <p className="text-slate-500 text-sm mt-0.5">
+              {isLoading ? "Tag'ler ve paylaşımlar toplanıyor…" : isError ? "Bulunamadı" : `${data.length} paylaşım`}
+            </p>
+          </div>
+          <button onClick={onKapat} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={18} className="text-slate-500" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-4 space-y-2.5">
+          {isLoading ? (
+            [...Array(4)].map((_, i) => (
+              <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />
+            ))
+          ) : isError ? (
+            <p className="text-sm text-red-500 text-center py-10">Paylaşımlar getirilemedi.</p>
+          ) : data.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-10">Paylaşım bulunamadı.</p>
+          ) : (
+            data.map((p, i) => (
+              <a
+                key={i}
+                href={p.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start justify-between gap-3 p-3.5 rounded-xl border border-slate-100 hover:border-brand-300 hover:bg-brand-50/50 transition-colors group"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 group-hover:text-brand-700 line-clamp-2">
+                    {p.baslik}
+                  </p>
+                  {p.ozet && <p className="text-xs text-slate-400 line-clamp-2 mt-1">{p.ozet}</p>}
+                  {p.tag && (
+                    <span className="inline-block mt-1.5 text-xs text-[#0A66C2] bg-[#0A66C2]/10 px-1.5 py-0.5 rounded-full font-medium">
+                      {p.tag}
+                    </span>
+                  )}
+                </div>
+                <ExternalLink size={14} className="text-slate-300 group-hover:text-brand-500 shrink-0 mt-1" />
+              </a>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── ULAK kartı + dönem popup'ı ──────────────────────────────────────────────────
-
-const SENTIMENT_BADGE: Record<string, string> = {
-  olumlu: "bg-green-100 text-green-700",
-  olumsuz: "bg-red-100 text-red-700",
-  nötr: "bg-slate-100 text-slate-600",
-};
 
 const DONEMLER = [
   { key: "bugun", label: "Bugün", gun: 1 },
@@ -71,11 +136,6 @@ function HaberPopup({ donem, onKapat }: { donem: Donem; onKapat: () => void }) {
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-400 flex-wrap">
                     {h.kaynak && <span>{h.kaynak}</span>}
                     {h.tarih && <span>· {formatTarih(h.tarih)}</span>}
-                    {h.sentiment && (
-                      <span className={cn("px-1.5 py-0.5 rounded-full font-medium", SENTIMENT_BADGE[h.sentiment] ?? "bg-slate-100 text-slate-600")}>
-                        {h.sentiment}
-                      </span>
-                    )}
                   </div>
                 </div>
                 <ExternalLink size={14} className="text-slate-300 group-hover:text-brand-500 shrink-0 mt-1" />
@@ -90,6 +150,7 @@ function HaberPopup({ donem, onKapat }: { donem: Donem; onKapat: () => void }) {
 
 function UlakKarti() {
   const [acikDonem, setAcikDonem] = useState<Donem | null>(null);
+  const [linkedinAcik, setLinkedinAcik] = useState(false);
 
   const { data: sayilar } = useQuery<Record<string, number>>({
     queryKey: ["ulak-haber-sayilari"],
@@ -98,29 +159,45 @@ function UlakKarti() {
   });
 
   return (
-    <div className="card p-6" style={{ borderTop: "3px solid #5CCAE8" }}>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
-          <img src="/logo.svg" alt="" className="w-full h-full object-contain p-1" />
-        </div>
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: "#0B8FB0" }}>ULAK</h2>
-          <p className="text-xs text-slate-400">Dönem seçin, o dönemin haberlerini görün</p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {DONEMLER.map((d) => (
+    <div className="card p-6 grid grid-cols-12 gap-6" style={{ borderTop: "3px solid #5CCAE8" }}>
+      <div className="col-span-12 lg:col-span-7">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+            <img src="/logo.svg" alt="" className="w-full h-full object-contain p-1" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold" style={{ color: "#0B8FB0" }}>ULAK</h2>
+            <p className="text-xs text-slate-400">Dönem seçin, o dönemin haberlerini görün</p>
+          </div>
           <button
-            key={d.key}
-            onClick={() => setAcikDonem(d)}
-            className="flex flex-col items-center py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+            onClick={() => setLinkedinAcik(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-[#0A66C2]/30 text-[#0A66C2] bg-[#0A66C2]/5 hover:bg-[#0A66C2]/10 transition-colors shrink-0"
           >
-            <span className="text-sm font-medium">{d.label}</span>
-            <span className="text-xs text-slate-400">{sayilar?.[String(d.gun)] ?? 0} haber</span>
+            <Network size={14} /> LinkedIn
           </button>
-        ))}
+        </div>
+        <div className="space-y-2">
+          {DONEMLER.map((d) => (
+            <button
+              key={d.key}
+              onClick={() => setAcikDonem(d)}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+            >
+              <span className="text-sm font-medium">{d.label}</span>
+              <span className="text-sm font-semibold text-slate-800">{sayilar?.[String(d.gun)] ?? 0}</span>
+            </button>
+          ))}
+        </div>
       </div>
+
+      <div className="col-span-12 lg:col-span-5">
+        <UlakSlider />
+      </div>
+
       {acikDonem && <HaberPopup donem={acikDonem} onKapat={() => setAcikDonem(null)} />}
+      {linkedinAcik && (
+        <LinkedInPostlarPopup firma="ULAK" baslik="ULAK" onKapat={() => setLinkedinAcik(false)} />
+      )}
     </div>
   );
 }
@@ -206,6 +283,7 @@ const RAKIP_MARKA: Record<string, { renk: string; logo: string }> = {
 
 function RakipKarti({ ad, sayilar }: { ad: string; sayilar?: Record<string, number> }) {
   const [acikDonem, setAcikDonem] = useState<RakipDonem | null>(null);
+  const [linkedinAcik, setLinkedinAcik] = useState(false);
   const marka = RAKIP_MARKA[ad];
 
   return (
@@ -218,19 +296,28 @@ function RakipKarti({ ad, sayilar }: { ad: string; sayilar?: Record<string, numb
         )}
         <h3 className="text-sm font-semibold" style={{ color: marka?.renk ?? "#0F172A" }}>{ad}</h3>
       </div>
+      <button
+        onClick={() => setLinkedinAcik(true)}
+        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 mb-2 rounded-lg text-xs font-medium border border-[#0A66C2]/30 text-[#0A66C2] bg-[#0A66C2]/5 hover:bg-[#0A66C2]/10 transition-colors"
+      >
+        <Network size={14} /> LinkedIn
+      </button>
       <div className="space-y-2">
         {RAKIP_KART_DONEMLER.map((d) => (
           <button
             key={d.key}
             onClick={() => setAcikDonem(d)}
-            className="w-full flex items-center justify-between text-sm px-1.5 py-1 -mx-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+            className="w-full flex items-center justify-between px-3.5 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
           >
-            <span className="text-slate-500">{d.label}</span>
-            <span className="font-semibold text-slate-800">{sayilar?.[d.key] ?? 0}</span>
+            <span className="text-sm font-medium">{d.label}</span>
+            <span className="text-sm font-semibold text-slate-800">{sayilar?.[d.key] ?? 0}</span>
           </button>
         ))}
       </div>
       {acikDonem && <RakipHaberPopup firma={ad} donem={acikDonem} onKapat={() => setAcikDonem(null)} />}
+      {linkedinAcik && (
+        <LinkedInPostlarPopup firma={ad} baslik={ad} onKapat={() => setLinkedinAcik(false)} />
+      )}
     </div>
   );
 }
@@ -277,33 +364,6 @@ export default function Dashboard() {
 
       {/* Rakip firma kartları */}
       <RakipKartlari />
-
-      {/* Özet kartları */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="card p-6 flex items-start gap-4">
-          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-            <FileText size={20} className="text-indigo-600" />
-          </div>
-          <div>
-            <p className="text-slate-500 text-sm">Toplam Rapor</p>
-            <p className="text-2xl font-semibold text-slate-900 mt-0.5">{data.toplam_rapor}</p>
-            <p className="text-slate-400 text-xs mt-1">
-              Son rapor: {formatTarihSaat(data.son_rapor_tarihi)}
-            </p>
-          </div>
-        </div>
-
-        <div className="card p-6 flex items-start gap-4">
-          <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
-            <Users size={20} className="text-purple-600" />
-          </div>
-          <div>
-            <p className="text-slate-500 text-sm">Aktif Alıcı</p>
-            <p className="text-2xl font-semibold text-slate-900 mt-0.5">{data.aktif_alici}</p>
-            <p className="text-slate-400 text-xs mt-1">Mail listesinde kayıtlı</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

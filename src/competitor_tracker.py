@@ -133,6 +133,69 @@ def rakip_haberleri_cek(gun: int = 30, haber_basi: int = 3,
     return sonuc
 
 
+def _tenant_rakip_tek_firma_cek(ad: str, gun: int, haber_basi: int) -> list[dict]:
+    esik = datetime.now() - timedelta(days=gun)
+    haberler: list[dict] = []
+    goruldu_url: set[str] = set()
+
+    for dil in ("tr", "en"):
+        if len(haberler) >= haber_basi:
+            break
+        try:
+            feed = feedparser.parse(_rss_url(ad, dil))
+            for entry in feed.entries:
+                url = entry.get("link", "")
+                if not url or url in goruldu_url:
+                    continue
+
+                try:
+                    tarih = datetime(*entry.published_parsed[:6])
+                except Exception:
+                    tarih = None
+
+                if tarih and tarih < esik:
+                    continue
+
+                goruldu_url.add(url)
+                haberler.append({
+                    "baslik": entry.get("title", "").strip(),
+                    "ozet": entry.get("summary", "")[:400],
+                    "url": url,
+                    "kaynak": (entry.get("source", {}).get("title") if hasattr(entry, "source") else None) or "Google News",
+                    "tarih": tarih.isoformat() if tarih else None,
+                })
+
+                if len(haberler) >= haber_basi:
+                    break
+        except Exception as e:
+            logger.error(f"Tenant rakip haber hatası ({ad}, {dil}): {e}")
+
+    haberler.sort(key=lambda h: h["tarih"] or "", reverse=True)
+
+    from src.relevans_filtre import relevans_maskesi
+    maske = relevans_maskesi(ad, [(h["baslik"], h["ozet"]) for h in haberler])
+    haberler = [h for h, ilgili in zip(haberler, maske) if ilgili]
+
+    logger.info(f"Tenant rakip haber — {ad}: {len(haberler)} haber (relevans filtresi sonrası)")
+    return haberler
+
+
+def tenant_rakip_haberleri_cek(isimler: list[str], gun: int = 7,
+                                haber_basi: int = 5) -> dict[str, list[dict]]:
+    """
+    Tenant'ın seçtiği (rss_sorgu tanımı olmayan, isme dayalı) rakip firmalar
+    için Google News RSS'ten haber çeker. {firma_adi: [{baslik,url,kaynak,tarih}]} döner.
+    Seçilen firmalar paralel işlenir (her firmanın RSS + LLM relevans doğrulama
+    süresi ardışık değil, birlikte akar).
+    """
+    if not isimler:
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(isimler)) as havuz:
+        sonuclar = list(havuz.map(lambda ad: (ad, _tenant_rakip_tek_firma_cek(ad, gun, haber_basi)), isimler))
+    return dict(sonuclar)
+
+
 # ── Dashboard kartları: sabit firma seti için dönem bazlı haber sayıları ────────
 
 # Bu 4 firma Ulak Haberleşme'nin ortakları/paydaşları — dashboard kartlarında
@@ -151,11 +214,51 @@ _DASHBOARD_CACHE_SN = 600  # 10 dakika — her dashboard yüklemesinde 4 RSS ist
 _dashboard_cache: dict = {"zaman": None, "veri": None}
 
 
+_DASHBOARD_RELEVANS_LIMIT = 30  # LLM doğrulamasına gönderilecek en fazla haber sayısı (gecikmeyi sınırlar)
+
+
+def _firma_veri_cek(ad: str, sorgu: str) -> list[dict]:
+    haberler: list[dict] = []
+    try:
+        feed = feedparser.parse(_rss_url(sorgu, "tr"))
+        for entry in feed.entries:
+            try:
+                tarih = datetime(*entry.published_parsed[:6])
+            except Exception:
+                tarih = None
+            haberler.append({
+                "baslik": entry.get("title", "").strip(),
+                "ozet": entry.get("summary", "")[:400],
+                "url": entry.get("link", ""),
+                "kaynak": (entry.get("source", {}).get("title") if hasattr(entry, "source") else None) or "Google News",
+                "tarih": tarih.isoformat() if tarih else None,
+            })
+    except Exception as e:
+        logger.error(f"Dashboard rakip veri hatası ({ad}): {e}")
+
+    # En yeniden eskiye sırala, LLM doğrulamasını sadece en güncel N haberle
+    # sınırla (gecikmeyi ve LLM maliyetini sınırlı tutmak için)
+    haberler.sort(key=lambda h: h["tarih"] or "", reverse=True)
+    dogrulanacak = haberler[:_DASHBOARD_RELEVANS_LIMIT]
+    kalan = haberler[_DASHBOARD_RELEVANS_LIMIT:]
+
+    from src.relevans_filtre import relevans_maskesi
+    maske = relevans_maskesi(sorgu, [(h["baslik"], h["ozet"]) for h in dogrulanacak])
+    dogrulanan = [h for h, ilgili in zip(dogrulanacak, maske) if ilgili]
+
+    logger.info(
+        f"Dashboard rakip veri — {ad}: {len(dogrulanan)} haber "
+        f"(relevans filtresi sonrası, {len(kalan)} eski haber doğrulanmadan elendi)"
+    )
+    return dogrulanan
+
+
 def _dashboard_veri_al() -> dict[str, list[dict]]:
     """
     Her sabit dashboard firması için RSS'ten (baslik, url, kaynak, tarih) haber
     listesi çeker ve önbelleğe alır. Hem sayım hem de haber listesi popup'ı
-    aynı önbellekten beslenir.
+    aynı önbellekten beslenir. Firmalar paralel işlenir (4x LLM doğrulama
+    gecikmesini tek firma süresine indirmek için).
     """
     simdi = datetime.now()
 
@@ -163,27 +266,10 @@ def _dashboard_veri_al() -> dict[str, list[dict]]:
     if onbellek_zaman and (simdi - onbellek_zaman).total_seconds() < _DASHBOARD_CACHE_SN:
         return _dashboard_cache["veri"]
 
-    veri: dict[str, list[dict]] = {}
-
-    for ad, sorgu in DASHBOARD_FIRMALARI.items():
-        haberler: list[dict] = []
-        try:
-            feed = feedparser.parse(_rss_url(sorgu, "tr"))
-            for entry in feed.entries:
-                try:
-                    tarih = datetime(*entry.published_parsed[:6])
-                except Exception:
-                    tarih = None
-                haberler.append({
-                    "baslik": entry.get("title", "").strip(),
-                    "url": entry.get("link", ""),
-                    "kaynak": (entry.get("source", {}).get("title") if hasattr(entry, "source") else None) or "Google News",
-                    "tarih": tarih.isoformat() if tarih else None,
-                })
-        except Exception as e:
-            logger.error(f"Dashboard rakip veri hatası ({ad}): {e}")
-
-        veri[ad] = haberler
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(DASHBOARD_FIRMALARI)) as havuz:
+        sonuclar = list(havuz.map(lambda kv: (kv[0], _firma_veri_cek(*kv)), DASHBOARD_FIRMALARI.items()))
+    veri: dict[str, list[dict]] = dict(sonuclar)
 
     _dashboard_cache["zaman"] = simdi
     _dashboard_cache["veri"] = veri

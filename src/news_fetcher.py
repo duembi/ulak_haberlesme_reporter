@@ -102,10 +102,18 @@ def haberleri_cek(gun: int = NEWS_API_LOOKBACK_DAYS) -> list[Haber]:
     # Boş başlıkları at
     tum_haberler = [h for h in tum_haberler if h.baslik.strip()]
 
-    # Ulak Haberleşme ile alakasız haberleri filtrele
+    # Ulak Haberleşme ile alakasız haberleri filtrele (anahtar kelime)
     onceki = len(tum_haberler)
     tum_haberler = [h for h in tum_haberler if _ulak_alakali_mi(h)]
     logger.info(f"{onceki - len(tum_haberler)} alakasız haber filtrelendi")
+
+    # İkinci aşama: LLM ile gerçekten Ulak Haberleşme'yle ilgili mi diye doğrula
+    # (aynı kelimeyi kullanan ama şirketle ilgisi olmayan içerikleri elemek için)
+    from src.relevans_filtre import relevans_maskesi
+    onceki = len(tum_haberler)
+    maske = relevans_maskesi("Ulak Haberleşme", [(h.baslik, h.ozet) for h in tum_haberler])
+    tum_haberler = [h for h, ilgili in zip(tum_haberler, maske) if ilgili]
+    logger.info(f"{onceki - len(tum_haberler)} haber LLM relevans doğrulamasında elendi")
 
     # Sadece seçilen dönemin haberlerini al; tarihi bilinmeyenleri at
     esik = datetime.now() - timedelta(days=gun)

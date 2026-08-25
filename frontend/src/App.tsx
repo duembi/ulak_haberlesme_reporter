@@ -2,12 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 
-import Layout    from "@/components/Layout";
-import Dashboard from "@/pages/Dashboard";
-import Reports   from "@/pages/Reports";
-import Settings  from "@/pages/Settings";
-import Login     from "@/pages/Login";
-import Register  from "@/pages/Register";
+import Layout        from "@/components/Layout";
+import Dashboard     from "@/pages/Dashboard";
+import YonetimKurulu from "@/pages/YonetimKurulu";
+import RakipFirmalar from "@/pages/RakipFirmalar";
+import Login         from "@/pages/Login";
+import Register      from "@/pages/Register";
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
@@ -46,9 +46,9 @@ export default function App() {
 
             {/* Protected */}
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-              <Route index           element={<Dashboard />} />
-              <Route path="raporlar" element={<Reports />} />
-              <Route path="ayarlar"  element={<Settings />} />
+              <Route index                  element={<Dashboard />} />
+              <Route path="yonetim-kurulu"  element={<YonetimKurulu />} />
+              <Route path="rakip-firmalar"  element={<RakipFirmalar />} />
             </Route>
 
             {/* 404 */}

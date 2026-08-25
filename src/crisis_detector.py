@@ -1,9 +1,8 @@
 """
 Kriz algılama modülü.
-Haberleri kritik kelimeler ve sentiment oranı açısından tarar.
+Haberleri kritik kelimeler açısından tarar.
 Kriz tespit edilirse log'a uyarı yazar ve alerts/ klasörüne dosya bırakır.
 """
-from collections import Counter
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -15,11 +14,6 @@ from src.news_fetcher import Haber
 
 ALERTS_DIR = BASE_DIR / "alerts"
 ALERTS_DIR.mkdir(exist_ok=True)
-
-# Kriz seviyesi eşikleri
-DIKKAT_OLUMSUZ_ORAN  = 0.40   # %40 ve üzeri olumsuz → DİKKAT
-KRIZ_OLUMSUZ_ORAN    = 0.60   # %60 ve üzeri olumsuz → KRİZ
-KRIZ_MINIMUM_HABER   = 3      # En az bu kadar haber varsa oran hesapla
 
 # Ulak Haberleşme bağlamı anahtar kelimeleri — haberde bunlardan biri varsa şirketle ilgili sayılır
 ULAK_BAGLAM = [
@@ -56,7 +50,6 @@ KRITIK_KELIMELER_BAGLAM = [
 
 class KrizSeviyesi(Enum):
     NORMAL = "normal"
-    DIKKAT = "dikkat"
     KRIZ   = "kriz"
 
 
@@ -98,37 +91,17 @@ def kriz_tespit_et(haberler: list[Haber]) -> tuple[KrizSeviyesi, str]:
     if not haberler:
         return KrizSeviyesi.NORMAL, "Haber bulunamadı."
 
-    sayim  = Counter(h.sentiment for h in haberler)
-    toplam = len(haberler)
-    olumsuz_oran = sayim.get("olumsuz", 0) / toplam if toplam else 0
-
     kritik_haberler = _kritik_kelime_tara(haberler)
 
-    # Kriz seviyesi belirleme
     if kritik_haberler:
         seviye = KrizSeviyesi.KRIZ
         aciklama = (
             f"KRİTİK KELİME TESPİT EDİLDİ — {len(kritik_haberler)} haber.\n"
             + "\n".join(f"  • [{k}] {b}" for b, k in kritik_haberler[:5])
         )
-    elif toplam >= KRIZ_MINIMUM_HABER and olumsuz_oran >= KRIZ_OLUMSUZ_ORAN:
-        seviye = KrizSeviyesi.KRIZ
-        aciklama = (
-            f"YÜKSEK OLUMSUZ ORAN — %{olumsuz_oran*100:.0f} olumsuz "
-            f"({sayim.get('olumsuz',0)}/{toplam} haber)"
-        )
-    elif toplam >= KRIZ_MINIMUM_HABER and olumsuz_oran >= DIKKAT_OLUMSUZ_ORAN:
-        seviye = KrizSeviyesi.DIKKAT
-        aciklama = (
-            f"Olumsuz haber oranı yüksek — %{olumsuz_oran*100:.0f} "
-            f"({sayim.get('olumsuz',0)}/{toplam} haber)"
-        )
     else:
         seviye = KrizSeviyesi.NORMAL
-        aciklama = (
-            f"Normal — %{olumsuz_oran*100:.0f} olumsuz, "
-            f"kritik kelime yok."
-        )
+        aciklama = "Normal — kritik kelime yok."
 
     return seviye, aciklama
 
@@ -144,11 +117,6 @@ def kriz_degerlendir(haberler: list[Haber]) -> KrizSeviyesi:
     if seviye == KrizSeviyesi.KRIZ:
         logger.error(f"🚨 KRİZ UYARISI: {aciklama}")
         _alert_dosyasi_yaz(seviye, aciklama, haberler, simdi)
-
-    elif seviye == KrizSeviyesi.DIKKAT:
-        logger.warning(f"⚠️  DİKKAT: {aciklama}")
-        _alert_dosyasi_yaz(seviye, aciklama, haberler, simdi)
-
     else:
         logger.info(f"✅ Kriz yok. {aciklama}")
 
@@ -161,7 +129,8 @@ def _alert_dosyasi_yaz(seviye: KrizSeviyesi, aciklama: str,
     dosya_adi = f"ALERT_{seviye.value.upper()}_{simdi.strftime('%Y%m%d_%H%M%S')}.txt"
     yol = ALERTS_DIR / dosya_adi
 
-    olumsuz = [h for h in haberler if h.sentiment == "olumsuz"]
+    kritik_baslikliler = {b for b, _ in _kritik_kelime_tara(haberler)}
+    kritik_haberler = [h for h in haberler if h.baslik[:80] in kritik_baslikliler]
     satirlar = [
         f"ULAK HABERLEŞME MEDYA KRİZ UYARISI",
         f"Seviye : {seviye.value.upper()}",
@@ -170,9 +139,9 @@ def _alert_dosyasi_yaz(seviye: KrizSeviyesi, aciklama: str,
         f"GEREKÇE:",
         aciklama,
         f"",
-        f"OLUMSUZ HABERLER ({len(olumsuz)} adet):",
+        f"İLGİLİ HABERLER ({len(kritik_haberler)} adet):",
     ]
-    for h in olumsuz[:10]:
+    for h in kritik_haberler[:10]:
         tarih = h.tarih.strftime("%d.%m.%Y") if h.tarih else "?"
         satirlar.append(f"  [{tarih}] {h.baslik}")
         if h.ai_ozet:

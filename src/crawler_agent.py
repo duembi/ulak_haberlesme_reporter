@@ -147,5 +147,13 @@ def web_haberleri_cek(gun: int = 7) -> list[Haber]:
                 dil=dil,
             ))
 
+    # İkinci aşama: LLM ile gerçekten Ulak Haberleşme'yle ilgili mi diye doğrula
+    from src.relevans_filtre import relevans_maskesi
+    onceki = len(haberler)
+    maske = relevans_maskesi("Ulak Haberleşme", [(h.baslik, h.ozet) for h in haberler])
+    haberler = [h for h, ilgili in zip(haberler, maske) if ilgili]
+    if onceki != len(haberler):
+        logger.info(f"{onceki - len(haberler)} haber LLM relevans doğrulamasında elendi")
+
     logger.info(f"Web crawl tamamlandı: {len(haberler)} Ulak Haberleşme haberi bulundu")
     return haberler

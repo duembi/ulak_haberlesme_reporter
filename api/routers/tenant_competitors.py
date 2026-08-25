@@ -34,6 +34,9 @@ Her rakip için şu alanları doldur:
 - bolge: Firmanın bulunduğu ülke/bölge
 - sektor: Hangi alt sektörde rekabet ediyor
 
+ÖNEMLİ: ASELSAN, Havelsan, SSTEK ve Savunma Sanayii Başkanlığı (SSB) rakip DEĞİL,
+Ulak Haberleşme'nin bağlı olduğu iştirak/grup şirketleridir — bunları listeye ekleme.
+
 Yanıtı SADECE bu JSON formatında ver (başka metin ekleme):
 {{
   "rakipler": [
@@ -97,6 +100,30 @@ class TenantRakipYanit(BaseModel):
     aktif: bool
     ai_onerisi: bool
     olusturuldu_at: str
+
+
+class HaberIstek(BaseModel):
+    adlar: list[str]
+    gun: int = 7
+
+
+class RakipHaberYanit(BaseModel):
+    baslik: str
+    url: str
+    kaynak: str
+    tarih: Optional[str] = None
+
+
+class LinkedInGonderiYanit(BaseModel):
+    baslik: str
+    ozet: str
+    url: str
+    tag: Optional[str] = None
+
+
+class FirmaSonucYanit(BaseModel):
+    haberler: list[RakipHaberYanit]
+    linkedin: list[LinkedInGonderiYanit]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -169,3 +196,31 @@ async def sil(rakip_id: int, user: dict = Depends(get_current_user)):
     ok = tenant_rakip_sil(rakip_id, user["tenant_id"])
     if not ok:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rakip bulunamadı")
+
+
+@router.post("/haberler", response_model=dict[str, FirmaSonucYanit])
+async def haberleri_getir(data: HaberIstek, user: dict = Depends(get_current_user)):
+    """
+    Seçilen rakip firma adları için hem canlı Google News RSS taraması hem de
+    LinkedIn taraması yapar. Firmanın seçili LinkedIn tag'i yoksa LLM ile
+    otomatik üretilir. RSS/DDG çağrıları bloklayıcı olduğundan thread pool'a
+    (`asyncio.to_thread`) atılır.
+    """
+    if not data.adlar:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="En az bir firma seçin")
+
+    import asyncio
+    from src.competitor_tracker import tenant_rakip_haberleri_cek
+    from src.linkedin_tracker import firma_linkedin_tagleri_ve_gonderileri
+
+    haber_gorevi = asyncio.to_thread(tenant_rakip_haberleri_cek, data.adlar, data.gun)
+    linkedin_gorevleri = [
+        firma_linkedin_tagleri_ve_gonderileri(user["tenant_id"], ad, ad, gun=data.gun)
+        for ad in data.adlar
+    ]
+    haber_sonuc, *linkedin_sonuclari = await asyncio.gather(haber_gorevi, *linkedin_gorevleri)
+
+    return {
+        ad: FirmaSonucYanit(haberler=haber_sonuc.get(ad, []), linkedin=linkedin_sonuc)
+        for ad, linkedin_sonuc in zip(data.adlar, linkedin_sonuclari)
+    }

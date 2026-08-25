@@ -307,6 +307,280 @@ def _gonderileri_analiz_et(
     )
 
 
+# ── Firma bazlı ham arama (Dashboard "LinkedIn" popup'ı için) ─────────────────
+
+def firma_linkedin_ara(firma_adi: str, tagler: list[str], gun: int = 30,
+                        sonuc_basi: int = 15) -> list[dict]:
+    """
+    Verilen etiketlerle bir firma için LinkedIn gönderisi arar (DuckDuckGo).
+    Claude analizi yapmaz — ham sonuç listesi döner (hızlı, popup için).
+    """
+    if not tagler:
+        return []
+
+    zaman_araligi = "w" if gun <= 7 else ("m" if gun <= 31 else None)
+    sonuclar: list[dict] = []
+    goruldu: set[str] = set()
+
+    try:
+        with DDGS() as ddgs:
+            for tag in tagler[:12]:
+                if len(sonuclar) >= sonuc_basi:
+                    break
+                sorgu = f"site:linkedin.com/posts {tag}"
+                time.sleep(1.5)
+                try:
+                    for r in ddgs.text(sorgu, max_results=8, timelimit=zaman_araligi):
+                        url = r.get("href", "") or r.get("url", "")
+                        if not url or url in goruldu or "linkedin.com" not in url:
+                            continue
+                        goruldu.add(url)
+                        sonuclar.append({
+                            "baslik": r.get("title", ""),
+                            "ozet": (r.get("body", "") or r.get("snippet", ""))[:300],
+                            "url": url,
+                            "tag": tag,
+                        })
+                        if len(sonuclar) >= sonuc_basi:
+                            break
+                except Exception as e:
+                    logger.debug(f"Firma LinkedIn arama hatası ({firma_adi}, {sorgu[:40]}): {e}")
+    except Exception as e:
+        logger.error(f"DuckDuckGo bağlantı hatası ({firma_adi}): {e}")
+
+    from src.relevans_filtre import relevans_maskesi
+    maske = relevans_maskesi(firma_adi, [(s["baslik"], s["ozet"]) for s in sonuclar])
+    sonuclar = [s for s, ilgili in zip(sonuclar, maske) if ilgili]
+
+    logger.info(f"Firma LinkedIn araması — {firma_adi}: {len(sonuclar)} sonuç (relevans filtresi sonrası)")
+    return sonuclar
+
+
+# ── Firma tag üretimi + arama (Rakip Firmalar "Oluştur" akışı için) ───────────
+
+_TAG_URETIM_SYSTEM = (
+    "Sen bir sosyal medya ve pazar araştırması uzmanısın. "
+    "LinkedIn'de takip edilecek anahtar kelimeleri ve hashtag'leri belirliyorsun. "
+    "Yanıtlarını daima geçerli JSON formatında ver, başka metin ekleme."
+)
+
+_TAG_URETIM_PROMPT = """
+Aşağıdaki firma için LinkedIn'de takip edilmesi gereken hashtag ve anahtar kelimeleri belirle:
+
+Firma adı: {ad}
+
+Görev: Bu firmanın kurumsal duyuruları, ürünleri, projeleri ve sektörel gelişmeleriyle
+ilgili LinkedIn'de takip edilecek 15-20 hashtag/keyword üret.
+
+Her tag için:
+- tag: # ile başlayan hashtag veya arama terimi
+- aciklama: Neden takip edilmeli (kısa, Türkçe)
+
+Yanıtı SADECE şu JSON formatında ver:
+{{
+  "tagler": [
+    {{"tag": "#Örnek", "aciklama": "..."}}
+  ]
+}}
+"""
+
+
+async def _firma_tagleri_llm_ile_uret(tenant_id: int, firma: str, ad_gorunen: str) -> list[str]:
+    """Firma için LLM ile LinkedIn tag'leri üretir ve DB'ye kaydeder."""
+    import json as _json
+    from src.database import linkedin_tag_ekle
+    from src.llm_providers import LLMFactory
+
+    try:
+        llm = await LLMFactory.for_tenant(tenant_id)
+        prompt = _TAG_URETIM_PROMPT.format(ad=ad_gorunen)
+        yanit = await llm.generate_text(prompt, system_prompt=_TAG_URETIM_SYSTEM)
+        baslangic = yanit.find("{")
+        bitis = yanit.rfind("}") + 1
+        if baslangic == -1 or bitis == 0:
+            return []
+        veri = _json.loads(yanit[baslangic:bitis])
+    except Exception as e:
+        logger.error(f"LinkedIn tag üretim hatası ({firma}): {e}")
+        return []
+
+    uretilenler: list[str] = []
+    for item in veri.get("tagler", []):
+        tag = (item.get("tag") or "").strip()
+        if not tag:
+            continue
+        linkedin_tag_ekle(
+            tenant_id=tenant_id, tag=tag,
+            aciklama=(item.get("aciklama") or "").strip(),
+            kaynak="ai", secili=True, firma=firma,
+        )
+        uretilenler.append(tag)
+    return uretilenler
+
+
+async def firma_linkedin_tagleri_ve_gonderileri(tenant_id: int, firma: str, ad_gorunen: str,
+                                                 gun: int = 30) -> list[dict]:
+    """
+    Firmanın seçili LinkedIn tag'lerini kullanır; hiç tag yoksa LLM ile üretir,
+    ardından bu tag'lerle LinkedIn'de arama yapıp ham gönderi listesi döner.
+    """
+    import asyncio
+    from src.database import linkedin_tag_listele
+
+    tagler = [t["tag"] for t in linkedin_tag_listele(tenant_id, firma=firma) if t["secili"]]
+    if not tagler:
+        tagler = await _firma_tagleri_llm_ile_uret(tenant_id, firma, ad_gorunen)
+
+    if not tagler:
+        return []
+
+    return await asyncio.to_thread(firma_linkedin_ara, ad_gorunen, tagler, gun)
+
+
+# ── Üst kademe çalışan keşfi (LinkedIn profil araması) ────────────────────────
+
+_UST_KADEME_SORGU_SABLONLARI = [
+    'site:linkedin.com/in "{sirket}" Direktör',
+    'site:linkedin.com/in "{sirket}" Müdür',
+    'site:linkedin.com/in "{sirket}" Director',
+    'site:linkedin.com/in "{sirket}" Manager',
+]
+
+
+def _ascii_normalle(metin: str) -> str:
+    """
+    Türkçe karakterleri ASCII karşılığına çevirir — LinkedIn profillerinde
+    şirket adı genelde diyakritiksiz yazılır (ör. "ULAK HABERLESME"), quoted
+    arama bu yüzden orijinal Türkçe yazımla eşleşmeyebilir.
+    """
+    cevirim = str.maketrans("şŞğĞıİöÖüÜçÇ", "sSgGiIoOuUcC")
+    return metin.translate(cevirim)
+
+
+def _ust_kademe_sorgulari(sirket_adi: str) -> list[str]:
+    """Türkçe + ASCII normalize edilmiş şirket adıyla sorgu listesi üretir (tekilleştirilmiş)."""
+    varyantlar = {sirket_adi, _ascii_normalle(sirket_adi)}
+    sorgular = [
+        sablon.format(sirket=varyant)
+        for varyant in varyantlar
+        for sablon in _UST_KADEME_SORGU_SABLONLARI
+    ]
+    return sorgular
+
+_UST_KADEME_SYSTEM = (
+    "Sen bir İK/kurumsal araştırma uzmanısın. LinkedIn arama sonuçlarından "
+    "gerçekten belirtilen şirkette çalışan direktör/müdür seviyesindeki "
+    "kişileri ayıklıyorsun. Emin olmadığın veya belirsiz sonuçları eleme "
+    "yaparak dışarıda bırakıyorsun. Yanıtlarını daima geçerli JSON formatında ver."
+)
+
+_UST_KADEME_PROMPT = """
+Aşağıda "{sirket}" için LinkedIn'de yapılan aramalardan ham sonuçlar var. Her sonucun
+başlığı genelde "Ad Soyad - Unvan - Şirket | LinkedIn" formatındadır.
+
+{sonuclar}
+
+Görev: Bu sonuçlardan SADECE gerçekten "{sirket}" bünyesinde çalışan, Direktör veya
+Müdür (Director/Manager) seviyesindeki kişileri çıkar. Kurallar:
+- Başlık/özet şirket adını açıkça içermiyorsa veya şirketle ilişkisi belirsizse dahil etme.
+- Unvanı Direktör/Müdür/Director/Manager seviyesinde olmayanları (stajyer, uzman,
+  danışman vb.) dahil etme.
+- Aynı kişi birden fazla sonuçta geçiyorsa yalnızca bir kez ekle.
+- Emin değilsen dahil etme — yanlış kişi eklemek yanlış olmaktan iyidir.
+
+Yanıtı SADECE şu JSON formatında ver:
+{{
+  "kisiler": [
+    {{"ad_soyad": "...", "unvan": "...", "indeks": 0}}
+  ]
+}}
+
+"indeks" alanına o kişiyi tespit ettiğin sonucun köşeli parantez içindeki numarasını yaz.
+"""
+
+
+def _linkedin_profil_ara(sirket_adi: str, sonuc_basi: int = 30) -> list[dict]:
+    """DDG ile LinkedIn profil sonuçları arar (ham, doğrulanmamış)."""
+    sonuclar: list[dict] = []
+    goruldu: set[str] = set()
+
+    try:
+        with DDGS() as ddgs:
+            for sorgu in _ust_kademe_sorgulari(sirket_adi):
+                if len(sonuclar) >= sonuc_basi:
+                    break
+                time.sleep(1.5)
+                try:
+                    for r in ddgs.text(sorgu, max_results=8):
+                        url = r.get("href", "") or r.get("url", "")
+                        if not url or url in goruldu or "linkedin.com/in" not in url:
+                            continue
+                        goruldu.add(url)
+                        sonuclar.append({
+                            "baslik": r.get("title", ""),
+                            "ozet": (r.get("body", "") or r.get("snippet", ""))[:300],
+                            "url": url,
+                        })
+                        if len(sonuclar) >= sonuc_basi:
+                            break
+                except Exception as e:
+                    logger.debug(f"Üst kademe profil arama hatası ({sorgu[:40]}): {e}")
+    except Exception as e:
+        logger.error(f"DuckDuckGo bağlantı hatası (üst kademe keşfi): {e}")
+
+    logger.info(f"Üst kademe profil araması — {sirket_adi}: {len(sonuclar)} ham sonuç")
+    return sonuclar
+
+
+async def ust_kademe_kesif(tenant_id: int, sirket_adi: str = "Ulak Haberleşme") -> list[dict]:
+    """
+    LinkedIn'de "{sirket_adi}" için Direktör/Müdür unvanlı profilleri arar,
+    LLM ile ham sonuçları ayıklayıp gerçek kişi listesi döner
+    ({ad_soyad, unvan, linkedin_url}).
+    """
+    import asyncio
+    import json as _json
+    from src.llm_providers import LLMFactory
+
+    ham = await asyncio.to_thread(_linkedin_profil_ara, sirket_adi)
+    if not ham:
+        return []
+
+    sonuc_metni = "\n\n".join(
+        f"[{i}] Başlık: {s['baslik']}\nÖzet: {s['ozet']}"
+        for i, s in enumerate(ham)
+    )
+    prompt = _UST_KADEME_PROMPT.format(sirket=sirket_adi, sonuclar=sonuc_metni)
+
+    try:
+        llm = await LLMFactory.for_tenant(tenant_id)
+        yanit = await llm.generate_text(prompt, system_prompt=_UST_KADEME_SYSTEM)
+        baslangic = yanit.find("{")
+        bitis = yanit.rfind("}") + 1
+        if baslangic == -1 or bitis == 0:
+            return []
+        veri = _json.loads(yanit[baslangic:bitis])
+    except Exception as e:
+        logger.error(f"Üst kademe LLM doğrulama hatası: {e}")
+        return []
+
+    kisiler: list[dict] = []
+    for item in veri.get("kisiler", []):
+        idx = item.get("indeks")
+        ad_soyad = (item.get("ad_soyad") or "").strip()
+        unvan = (item.get("unvan") or "").strip()
+        if not ad_soyad or not isinstance(idx, int) or not (0 <= idx < len(ham)):
+            continue
+        kisiler.append({
+            "ad_soyad": ad_soyad,
+            "unvan": unvan,
+            "linkedin_url": ham[idx]["url"],
+        })
+
+    logger.info(f"Üst kademe keşfi — {sirket_adi}: {len(kisiler)} kişi doğrulandı")
+    return kisiler
+
+
 # ── Ana fonksiyon ─────────────────────────────────────────────────────────────
 
 def linkedin_gonderileri_cek(gun: int = 7) -> LinkedInRaporu:
